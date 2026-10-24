@@ -4,11 +4,14 @@ import {
   Building2,
   Copy,
   FileText,
+  FlaskConical,
   FolderOpen,
   LayoutDashboard,
   Upload,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
+import { useCurrentUser } from '../hooks/useCurrentUser'
+import { useUnreadAlerts } from '../hooks/useUnreadAlerts'
 
 const NAV: Array<{ to: string; label: string; icon: ComponentType<{ className?: string }> }> = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -18,11 +21,15 @@ const NAV: Array<{ to: string; label: string; icon: ComponentType<{ className?: 
   { to: '/alerts', label: 'Alerts', icon: Bell },
   { to: '/reports', label: 'Reports', icon: FileText },
   { to: '/import', label: 'Import', icon: Upload },
+  { to: '/evaluation', label: 'Evaluation', icon: FlaskConical },
 ]
 
-// Shell only. Login, the real user/role, the alert-bell count and the
-// role-based "Admin" link are wired by whoever does integration (/auth/me, /alerts).
+// Login and the real user/role are still to be wired by whoever does integration (/auth/me):
+// useCurrentUser() currently returns a MOCK user. The role-based "Admin" link is not built yet.
 export default function AppLayout() {
+  const user = useCurrentUser()
+  const unread = useUnreadAlerts()
+
   return (
     <div className="flex h-full">
       <aside className="hidden w-56 shrink-0 flex-col border-r border-slate-200 bg-white md:flex">
@@ -60,10 +67,21 @@ export default function AppLayout() {
             <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800">
               Synthetic data
             </span>
-            <NavLink to="/alerts" aria-label="Alerts" className="text-slate-600 hover:text-navy">
+            <NavLink
+              to="/alerts"
+              aria-label={unread ? `Alerts, ${unread} unread` : 'Alerts'}
+              className="relative text-slate-600 hover:text-navy"
+            >
               <Bell className="h-4 w-4" />
+              {unread ? (
+                <span className="absolute -right-2.5 -top-2 min-w-4 rounded-full bg-red-600 px-1 text-center text-[10px] font-semibold leading-4 text-white">
+                  {unread > 99 ? '99+' : unread}
+                </span>
+              ) : null}
             </NavLink>
-            <span className="text-slate-700">Demo user</span>
+            <span className="text-slate-700">
+              {user.name} ({user.role.replace(/_/g, ' ').toLowerCase()})
+            </span>
           </div>
         </header>
 
