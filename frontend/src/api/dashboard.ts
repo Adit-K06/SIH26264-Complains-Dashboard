@@ -1,4 +1,5 @@
 import { api } from './client'
+import { USE_MOCKS } from './config'
 import type { Ageing, CaseRow, DashboardSummary, OverlapFlag, Paged, Workload } from './types'
 import {
   mockAgeing,
@@ -7,10 +8,6 @@ import {
   mockSummary,
   mockWorkload,
 } from './mocks/dashboard'
-
-// Mocks are ON by default in `npm run dev`; set VITE_USE_MOCKS=false to use the real API.
-// A production build can never use mocks.
-const USE_MOCKS = import.meta.env.DEV && import.meta.env.VITE_USE_MOCKS !== 'false'
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
 async function mock<T>(data: T): Promise<T> {

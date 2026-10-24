@@ -1,4 +1,4 @@
-import type { CaseStatus } from '../lib/constants'
+import type { CaseStatus, Priority } from '../lib/constants'
 
 // Envelope from AGENTS.md: {"items":[...],"total":N,"page":1,"page_size":20}
 export interface Paged<T> {
@@ -10,10 +10,10 @@ export interface Paged<T> {
 
 /* ------------------------------------------------------------------
  * ASSUMED RESPONSE SHAPES.
- * AGENTS.md lists the dashboard endpoints but not their JSON bodies.
+ * AGENTS.md lists the endpoints but not their JSON bodies.
  * Everything below is an assumption. The person doing integration only
- * needs to adjust THIS file and src/api/dashboard.ts to match what
- * P4's /dashboard/* and P1's /cases and /overlaps really return.
+ * needs to adjust THIS file and the files in src/api/ to match what
+ * P1's /cases and /overlaps and P4's /dashboard/* really return.
  * ------------------------------------------------------------------ */
 
 export interface MonthlyPoint {
@@ -50,15 +50,23 @@ export interface Ageing {
   items: AgeingBucket[]
 }
 
-// GET /cases?beyond_sla=true  (fields used by the table only)
+// GET /cases  (one row of the list; column names follow the cases table in AGENTS.md)
 export interface CaseRow {
   id: number
   case_no: string
-  institution_name?: string | null
-  bureau_code?: string | null
   status: CaseStatus
-  priority?: 'LOW' | 'MEDIUM' | 'HIGH' | null
-  expected_disposal_on?: string | null // YYYY-MM-DD
+  institution_id?: number | null
+  institution_name?: string | null
+  bureau_id?: number | null
+  bureau_code?: string | null
+  region_id?: number | null
+  category_id?: number | null
+  category_name?: string | null
+  priority?: Priority | null
+  received_on?: string | null // YYYY-MM-DD
+  last_action_on?: string | null
+  expected_disposal_on?: string | null
+  link_group_id?: number | null // not null = linked with other cases
 }
 
 // GET /overlaps?state=OPEN

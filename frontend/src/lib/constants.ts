@@ -8,6 +8,9 @@ export const STATUSES = [
 ] as const
 export type CaseStatus = (typeof STATUSES)[number]
 
+export const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH'] as const
+export type Priority = (typeof PRIORITIES)[number]
+
 export const STATUS_LABEL: Record<CaseStatus, string> = {
   PENDING: 'Pending',
   UNDER_PROCESS: 'Under process',
