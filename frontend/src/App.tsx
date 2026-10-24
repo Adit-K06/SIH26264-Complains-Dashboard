@@ -1,15 +1,15 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import AppLayout from './components/AppLayout'
+import CaseDetailPage from './pages/CaseDetailPage'
 import CasesPage from './pages/CasesPage'
 import DashboardPage from './pages/DashboardPage'
+import OverlapCenterPage from './pages/OverlapCenterPage'
 import Placeholder from './pages/Placeholder'
 
-// Built so far: Dashboard, Cases list. Other routes are placeholders so that
-// every link (e.g. /cases/12, /overlaps?state=OPEN) lands somewhere valid.
+// Built so far: Dashboard, Cases list, Case detail, Overlap Center. Other routes are
+// placeholders so that every link lands somewhere valid.
 const OTHER_PAGES: Array<[string, string]> = [
-  ['cases/:id', 'Case detail'],
   ['institutions', 'Institutions'],
-  ['overlaps', 'Overlap Center'],
   ['alerts', 'Alerts'],
   ['reports', 'Reports'],
   ['import', 'Import'],
@@ -22,6 +22,8 @@ export default function App() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="cases" element={<CasesPage />} />
+        <Route path="cases/:id" element={<CaseDetailPage />} />
+        <Route path="overlaps" element={<OverlapCenterPage />} />
         {OTHER_PAGES.map(([path, title]) => (
           <Route key={path} path={path} element={<Placeholder title={title} />} />
         ))}
