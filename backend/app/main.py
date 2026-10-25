@@ -10,9 +10,16 @@ from fastapi.middleware.cors import CORSMiddleware
 import app.api as api_pkg
 
 app = FastAPI(title="SIH26264 Complaint Dashboard (synthetic demo data)")
-origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")]
-app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True,
-                   allow_methods=["*"], allow_headers=["*"])
+cors_origins_raw = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:8000,http://localhost:3000")
+origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_origin_regex=r"^https://.*\.vercel\.app$",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 root = APIRouter(prefix="/api/v1")
 
