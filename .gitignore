@@ -71,4 +71,6 @@ backend/alembic/versions/*.pyc
 
 # Extracted ZIP files (cleanup)
 extracted/
+extracted_new_aiml/
 *.zip
+*.pdf

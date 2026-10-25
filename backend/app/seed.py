@@ -24,7 +24,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.config import get_settings
-from app.models import Bureau, Region, User
+from app.models import Bureau, Region, SlaRule, User
 from app.models.enums import RoleEnum
 from app.security import hash_password
 
@@ -60,8 +60,40 @@ def _get_or_create_region(session, name: str) -> Region:
     return region
 
 
+# Default SLA rules per priority (AGENTS.md note: placeholder values, not official AICTE norms)
+_SLA_DEFAULTS: list[tuple[str, int, int, int, int]] = [
+    # (priority, days_to_dispose, warn_at_pct, reminder_after_days, escalate_after_days)
+    ("HIGH",   15, 80,  5, 12),
+    ("MEDIUM", 30, 80,  7, 25),
+    ("LOW",    45, 80, 10, 40),
+]
+
+
+def _seed_sla_rules(session) -> int:
+    """Create default SLA rules (category=None, global) idempotently."""
+    from app.models.enums import PriorityEnum
+    created = 0
+    for priority_str, days, warn, reminder, escalate in _SLA_DEFAULTS:
+        priority = PriorityEnum(priority_str)
+        existing = session.query(SlaRule).filter_by(
+            category_id=None, priority=priority
+        ).first()
+        if existing is None:
+            session.add(SlaRule(
+                category_id=None,
+                priority=priority,
+                days_to_dispose=days,
+                warn_at_pct=warn,
+                reminder_after_days=reminder,
+                escalate_after_days=escalate,
+            ))
+            created += 1
+    session.commit()
+    return created
+
+
 def seed(session, reset: bool = False) -> None:
-    """Seed demo users. Idempotent unless *reset* is True.
+    """Seed demo users and default SLA rules. Idempotent unless *reset* is True.
 
     Refuses execution in production environment before any database action.
     """
@@ -100,6 +132,13 @@ def seed(session, reset: bool = False) -> None:
 
     session.commit()
     print(f"Seed complete. {created} user(s) created.")
+
+    # Seed default SLA rules (idempotent)
+    sla_created = _seed_sla_rules(session)
+    if sla_created:
+        print(f"  SLA rules created: {sla_created} (placeholder values — not official AICTE norms)")
+    else:
+        print("  SLA rules: already exist, skipped.")
 
 
 def main() -> None:

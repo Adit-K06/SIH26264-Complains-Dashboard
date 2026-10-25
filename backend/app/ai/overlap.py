@@ -1,8 +1,9 @@
 """Tier A rules and Tier B cross-bureau complaint similarity scoring."""
 from __future__ import annotations
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from itertools import combinations
+import os
 import re
 from typing import Any
 
@@ -10,8 +11,14 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+from .embeddings import embedding_similarity, similarity_mode
+
 OPEN_STATUSES = {"PENDING", "UNDER_PROCESS", "ESCALATED", "TRANSFERRED"}
-OVERLAP_THRESHOLD = 0.40
+# Tier-B cut-off. AGENTS.md starts at 0.60 and says to tune on training data; the synthetic
+# evaluation (docs/evaluation.md) selects 0.40 (at 0.60 it finds only ~10% of planted overlaps).
+# NOTE: at 0.40, same-category + close-in-time (0.30 + ~0.15) already scores 0.45 with no text
+# match, so flags are a "please review" signal, not proof. Override with env OVERLAP_THRESHOLD.
+OVERLAP_THRESHOLD = float(os.getenv("OVERLAP_THRESHOLD", "0.40"))
 
 @dataclass
 class OverlapFlag:
@@ -45,13 +52,49 @@ def _normal_text(value):
     return re.sub(r"\s+", " ", str(value or "").lower()).strip()
 
 
+def build_vectorizer(texts):
+    """Fit one corpus-level word TF-IDF so IDF reflects the whole institution, not just 2 texts.
+
+    Returns None when there is not enough text to fit (callers then fall back to pair-level fit).
+    """
+    docs = [_normal_text(t) for t in texts if _normal_text(t)]
+    if len(docs) < 2:
+        return None
+    try:
+        return TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True, strip_accents="unicode").fit(docs)
+    except ValueError:
+        return None
+
+
 def _text_similarity(a: str, b: str, vectorizer=None) -> float:
+    """Text similarity in 0..1. SIMILARITY_MODE: tfidf (default) | hybrid | embedding.
+
+    hybrid    = max(TF-IDF, calibrated embedding similarity): TF-IDF keeps exact wording/ID matches,
+                embeddings recover paraphrases that TF-IDF misses.
+    embedding = embedding similarity only.
+    If no embedding model can be loaded, every mode silently falls back to TF-IDF.
+    """
     a, b = _normal_text(a), _normal_text(b)
     if not a or not b: return 0.0
     if a == b: return 1.0
+    mode = similarity_mode()
+    if mode == "tfidf":
+        return _tfidf_similarity(a, b, vectorizer)
+    semantic = embedding_similarity(a, b)
+    if semantic is None:
+        return _tfidf_similarity(a, b, vectorizer)
+    if mode == "embedding":
+        return max(0.0, min(1.0, semantic))
+    return max(0.0, min(1.0, max(semantic, _tfidf_similarity(a, b, vectorizer))))
+
+
+def _tfidf_similarity(a: str, b: str, vectorizer=None) -> float:
+    """Lexical similarity (word + character TF-IDF). Inputs must already be normalised."""
     try:
-        word = vectorizer or TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True, strip_accents="unicode")
-        word_matrix = word.fit_transform([a, b])
+        if vectorizer is not None and hasattr(vectorizer, "vocabulary_"):
+            word_matrix = vectorizer.transform([a, b])          # already fitted: do not refit/mutate
+        else:
+            word_matrix = TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True, strip_accents="unicode").fit_transform([a, b])
         word_score = float(cosine_similarity(word_matrix[0:1], word_matrix[1:2])[0, 0])
     except ValueError:
         word_score = 0.0
@@ -98,16 +141,13 @@ def score_pair(case_a, case_b, vectorizer=None) -> dict:
     return {"score": round(float(score), 4), "reasons": reasons, "text_similarity": round(text_sim, 4), "category_match": bool(cat_match), "days_apart": days}
 
 
-def _enum_value(value):
-    """Return a stable string for SQLAlchemy enum members and plain values."""
-    return str(getattr(value, "value", value) or "").upper()
-
-
 def _open(case):
-    return _enum_value(_get(case, "status", default="")) in OPEN_STATUSES
+    status = _get(case, "status", default="")
+    status = getattr(status, "value", status)
+    return str(status).upper() in OPEN_STATUSES
 
 
-def detect_overlaps(cases, threshold: float = OVERLAP_THRESHOLD) -> list[OverlapFlag]:
+def detect_overlaps(cases, threshold: float | None = None) -> list[OverlapFlag]:
     """Pure in-memory detector used by tests, CSV evaluation, and demos."""
     if hasattr(cases, "to_dict"):
         records = cases.to_dict(orient="records")
@@ -116,6 +156,7 @@ def detect_overlaps(cases, threshold: float = OVERLAP_THRESHOLD) -> list[Overlap
     required = {"institution_id", "bureau", "status"}
     if records and not required.issubset(records[0].keys() if isinstance(records[0], dict) else set()):
         raise ValueError("cases must include institution_id, bureau, and status")
+    threshold = OVERLAP_THRESHOLD if threshold is None else threshold
     flags = []
     by_inst = {}
     for case in records:
@@ -125,59 +166,74 @@ def detect_overlaps(cases, threshold: float = OVERLAP_THRESHOLD) -> list[Overlap
         bureaus = {str(_get(c, "bureau")) for c in group}
         if len(bureaus) < 2: continue
         flags.append(OverlapFlag(institution_id=institution_id, tier="A", score=1.0, reasons=["DIFFERENT_BUREAU"]))
+        vec = build_vectorizer([_get(c, "summary", "complaint_text", default="") for c in group])
         for a, b in combinations(group, 2):
             if str(_get(a, "bureau")) == str(_get(b, "bureau")): continue
-            scored = score_pair(a, b)
+            scored = score_pair(a, b, vec)
             if scored["score"] >= threshold:
                 flags.append(OverlapFlag(institution_id=institution_id, case_a=_get(a, "id", "case_id", "case_no"), case_b=_get(b, "id", "case_id", "case_no"), tier="B", score=scored["score"], reasons=scored["reasons"]))
     return flags
 
 
 def _model(db, table_name):
+    """Find the mapped class for a table name among the classes exported by app.models."""
     try:
         import app.models as models
-        for value in vars(models).values():
-            if getattr(value, "__tablename__", None) == table_name:
-                return value
-            registry = getattr(value, "registry", None)
-            if registry is not None:
-                for mapper in registry.mappers:
-                    if mapper.local_table.name == table_name:
-                        return mapper.class_
-    except Exception:
-        pass
+    except Exception as exc:                       # pragma: no cover - import problem is a real error
+        raise RuntimeError(f"cannot import app.models: {exc}") from exc
+    for value in vars(models).values():
+        if getattr(value, "__tablename__", None) == table_name:
+            return value
     raise RuntimeError(f"SQLAlchemy model for table '{table_name}' was not found in app.models")
 
 
-def _resolve_related(db, case, bureau_models, category_models):
-    row = dict(case.__dict__)
-    row.pop("_sa_instance_state", None)
+def _open_status_filter():
+    try:
+        from app.models.enums import OPEN_CASE_STATUSES
+        return list(OPEN_CASE_STATUSES)
+    except Exception:
+        return sorted(OPEN_STATUSES)
 
-    # Store scalar bureau/category labels in the scoring row. SQLAlchemy
-    # relationship objects are not present in case.__dict__ under these keys.
-    bureau = getattr(case, "bureau", None)
-    if bureau is not None:
-        row["bureau"] = getattr(bureau, "code", getattr(bureau, "name", None))
-    elif case.bureau_id is not None and bureau_models is not None:
-        b = db.query(bureau_models).filter(bureau_models.id == case.bureau_id).first()
-        if b is not None:
-            row["bureau"] = getattr(b, "code", getattr(b, "name", None))
 
-    category = getattr(case, "category", None)
-    if category is not None:
-        row["category"] = getattr(category, "name", getattr(case, "category_id", None))
-    elif case.category_id is not None and category_models is not None:
-        c = db.query(category_models).filter(category_models.id == case.category_id).first()
-        if c is not None:
-            row["category"] = getattr(c, "name", case.category_id)
-    return row
+def _as_utc(value):
+    """Normalise date / naive datetime / aware datetime to an aware UTC datetime (or None)."""
+    if value is None: return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
+    return None
+
+
+def _case_row(case, bureau_codes: dict, category_names: dict) -> dict:
+    """Plain dict for score_pair. Built from columns only so relationship objects never leak in."""
+    status = getattr(case.status, "value", case.status)
+    return {
+        "id": case.id, "case_no": case.case_no, "institution_id": case.institution_id,
+        "bureau_id": case.bureau_id, "bureau": bureau_codes.get(case.bureau_id, case.bureau_id),
+        "category_id": case.category_id, "category": category_names.get(case.category_id, case.category_id),
+        "status": status, "summary": case.summary, "received_on": case.received_on,
+        "last_action_on": case.last_action_on, "last_action_text": case.last_action_text,
+        "complainant_ref": case.complainant_ref,
+    }
+
+
+def _changed_after(case_rows, decided_at) -> bool:
+    """True if either case was acted on / received after the flag was decided."""
+    decided = _as_utc(decided_at)
+    if decided is None: return True
+    stamps = [_as_utc(r.get("last_action_on")) or _as_utc(r.get("received_on")) for r in case_rows]
+    return any(s is not None and s > decided for s in stamps)
 
 
 def scan_overlaps(db, institution_id: int | None = None) -> int:
-    """Scan SQLAlchemy cases and persist overlap_flags. Returns count of newly inserted flags.
+    """Scan open cases and persist overlap_flags. Returns the number of newly inserted flags.
 
-    Uses mapped tables named institutions, cases, overlap_flags and optionally bureaus/categories.
-    Existing dismissed Tier-B pairs stay dismissed unless summary/status changed after decided_at.
+    Tier A: institution has open cases in >= 2 distinct bureaus (one flag per institution).
+    Tier B: cross-bureau pair whose score_pair() >= OVERLAP_THRESHOLD.
+    A DISMISSED pair is only re-opened if one of its cases was acted on after decided_at.
+    The session is rolled back and the error re-raised if anything fails, so the caller
+    never receives a half-written scan.
     """
     Case = _model(db, "cases")
     Flag = _model(db, "overlap_flags")
@@ -185,37 +241,56 @@ def scan_overlaps(db, institution_id: int | None = None) -> int:
     except RuntimeError: Bureau = None
     try: Category = _model(db, "categories")
     except RuntimeError: Category = None
-    q = db.query(Case).filter(Case.status.in_(OPEN_STATUSES), Case.institution_id.isnot(None))
-    if institution_id is not None: q = q.filter(Case.institution_id == institution_id)
-    cases = [_resolve_related(db, c, Bureau, Category) for c in q.all()]
-    by_inst = {}
-    for c in cases: by_inst.setdefault(c.get("institution_id"), []).append(c)
+
+    bureau_codes = {b.id: b.code for b in db.query(Bureau).all()} if Bureau else {}
+    category_names = {c.id: c.name for c in db.query(Category).all()} if Category else {}
+
+    q = db.query(Case).filter(Case.status.in_(_open_status_filter()), Case.institution_id.isnot(None))
+    if institution_id is not None:
+        q = q.filter(Case.institution_id == institution_id)
+    by_inst: dict = {}
+    for case in q.all():
+        by_inst.setdefault(case.institution_id, []).append(_case_row(case, bureau_codes, category_names))
+
     new_count = 0
-    for inst_id, group in by_inst.items():
-        bureaus = {str(c.get("bureau") or c.get("bureau_id")) for c in group}
-        if len(bureaus) < 2: continue
-        existing_a = db.query(Flag).filter(Flag.institution_id == inst_id, Flag.tier == "A", Flag.case_a.is_(None), Flag.case_b.is_(None)).first()
-        if existing_a is None:
-            db.add(Flag(institution_id=inst_id, case_a=None, case_b=None, tier="A", score=1.0, reasons=["DIFFERENT_BUREAU"], state="OPEN")); new_count += 1
-        for a, b in combinations(group, 2):
-            if str(a.get("bureau") or a.get("bureau_id")) == str(b.get("bureau") or b.get("bureau_id")): continue
-            result = score_pair(a, b)
-            if result["score"] < OVERLAP_THRESHOLD: continue
-            aid, bid = a.get("id"), b.get("id")
-            if aid is None or bid is None: continue
-            if aid > bid: aid, bid = bid, aid; a, b = b, a
-            existing = db.query(Flag).filter(Flag.case_a == aid, Flag.case_b == bid).first()
-            if existing is not None:
-                if getattr(existing, "state", "OPEN") == "DISMISSED":
-                    decided_at = getattr(existing, "decided_at", None)
-                    changed_a = (a.get("updated_at") or a.get("last_action_on") or a.get("received_on")) if isinstance(a, dict) else (getattr(a, "updated_at", None) or getattr(a, "last_action_on", None) or getattr(a, "received_on", None))
-                    changed_b = (b.get("updated_at") or b.get("last_action_on") or b.get("received_on")) if isinstance(b, dict) else (getattr(b, "updated_at", None) or getattr(b, "last_action_on", None) or getattr(b, "received_on", None))
-                    changed_at = max(changed_a or datetime.min, changed_b or datetime.min)
-                    if decided_at and changed_at and changed_at <= decided_at: continue
+    try:
+        for inst_id, group in by_inst.items():
+            if len({r["bureau_id"] for r in group}) < 2:
+                continue
+
+            tier_a = db.query(Flag).filter(Flag.institution_id == inst_id, Flag.case_a.is_(None), Flag.case_b.is_(None)).first()
+            if tier_a is None:
+                db.add(Flag(institution_id=inst_id, case_a=None, case_b=None, tier="A", score=1.0,
+                            reasons=["DIFFERENT_BUREAU"], state="OPEN"))
+                new_count += 1
+
+            vec = build_vectorizer([r["summary"] for r in group])
+            for a, b in combinations(group, 2):
+                if a["bureau_id"] == b["bureau_id"]:
+                    continue
+                result = score_pair(a, b, vec)
+                if result["score"] < OVERLAP_THRESHOLD:
+                    continue
+                if a["id"] > b["id"]:
+                    a, b = b, a
+                existing = db.query(Flag).filter(Flag.case_a == a["id"], Flag.case_b == b["id"]).first()
+                if existing is None:
+                    db.add(Flag(institution_id=inst_id, case_a=a["id"], case_b=b["id"], tier="B",
+                                score=result["score"], reasons=result["reasons"], state="OPEN"))
+                    new_count += 1
+                    continue
+                state = getattr(existing.state, "value", existing.state)
+                if state == "DISMISSED" and not _changed_after((a, b), existing.decided_at):
+                    continue                                   # stays dismissed
                 existing.score = result["score"]
                 existing.reasons = result["reasons"]
-                if getattr(existing, "state", "OPEN") != "CONFIRMED": existing.state = "OPEN"
-                continue
-            db.add(Flag(institution_id=inst_id, case_a=aid, case_b=bid, tier="B", score=result["score"], reasons=result["reasons"], state="OPEN")); new_count += 1
-    db.commit()
+                if state == "DISMISSED":                       # something changed -> re-raise
+                    existing.state = "OPEN"
+                    existing.decided_by = None
+                    existing.decided_at = None
+                    new_count += 1
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return new_count

@@ -183,7 +183,7 @@ def get_sla_overview(
     compliance_rate = round(((total_open - overdue) / total_open * 100), 1) if total_open > 0 else 100.0
 
     # Fetch bureaus to label breakdown
-    bureaus = db.query(Bureau).order_id() if hasattr(Bureau, "order_id") else db.query(Bureau).all()
+    bureaus = db.query(Bureau).order_by(Bureau.id.asc()).all()
     bureau_lookup = {b.id: b.code for b in bureaus}
 
     by_bureau_list: list[BureauSlaBreakdown] = []

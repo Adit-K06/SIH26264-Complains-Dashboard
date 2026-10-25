@@ -132,11 +132,20 @@ def get_admin_evaluation(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """System evaluation and model performance metrics."""
-    return {
+    """System evaluation and model performance metrics.
+
+    Returns metrics from docs/evaluation.json when available (produced by
+    `python -m app.ai.evaluate`), falling back to config constants.
+    """
+    import json
+    import os
+
+    base = {
         "status": "ready",
         "fuzzy_threshold_auto": 0.92,
         "fuzzy_threshold_review": 0.75,
+        "overlap_threshold": float(os.getenv("OVERLAP_THRESHOLD", "0.40")),
+        "similarity_mode": os.getenv("SIMILARITY_MODE", "tfidf"),
         "tier_b_weights": {
             "text_similarity": 0.45,
             "category_match": 0.30,
@@ -145,3 +154,15 @@ def get_admin_evaluation(
         },
         "synthetic_source": "SYNTHETIC",
     }
+    # Try to load real evaluation metrics from docs/evaluation.json
+    try:
+        from app.ai.paths import docs_dir
+        eval_path = docs_dir() / "evaluation.json"
+        if eval_path.exists():
+            with open(eval_path, "r", encoding="utf-8") as fh:
+                eval_data = json.load(fh)
+            base["evaluation"] = eval_data
+            base["status"] = "evaluated"
+    except Exception:
+        pass  # evaluation.json missing or malformed — return base config only
+    return base

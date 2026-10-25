@@ -338,12 +338,17 @@ def run_overlap_scan(
     new_flags = 0
 
     # Run the integrated AI overlap detector.
+    # scan_overlaps() rolls back the session itself before raising, so the session
+    # remains usable. We let the error propagate as a 400 so the caller knows.
     try:
         ai_result = ai_scan_overlaps(db, institution_id=institution_id)
         new_flags += ai_result
-    except Exception:
-        # AI module failure should not break the scan
-        pass
+    except Exception as exc:
+        raise _err(
+            status.HTTP_400_BAD_REQUEST,
+            "SCAN_ERROR",
+            f"AI overlap scan failed: {exc}",
+        )
 
     # Run our own Tier A detection:
     # "institution with open cases in >=2 distinct bureaus"

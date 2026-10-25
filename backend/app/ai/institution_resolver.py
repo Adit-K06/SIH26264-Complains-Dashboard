@@ -35,94 +35,91 @@ def _get(obj: Any, *names, default=None):
     return default
 
 
-def _model(db, table_name: str):
-    """Find a mapped SQLAlchemy model by its exact table name."""
-    try:
-        from sqlalchemy import inspect
-        bind = db.get_bind()
-        mapper_registry = getattr(db, "registry", None)
-        if mapper_registry:
-            for mapper in mapper_registry.mappers:
-                if mapper.local_table.name == table_name:
-                    return mapper.class_
-    except Exception:
-        pass
-    # Common project model exports.
-    try:
-        import app.models as models
-        for value in vars(models).values():
-            if getattr(value, "__tablename__", None) == table_name:
-                return value
-    except Exception:
-        pass
-    raise RuntimeError(f"SQLAlchemy model for table '{table_name}' was not found")
+def _db_institution_model(db):
+    from .overlap import _model          # single place that maps table name -> class
+    return _model(db, "institutions")
 
 
 def _rows(source):
     if hasattr(source, "to_dict") and hasattr(source, "columns"):
         return source.to_dict(orient="records")
-    if isinstance(source, (list, tuple)):
-        return list(source)
     return list(source)
 
 
-def resolve_institution(db, name: str | None = None, aicte_id: str | None = None) -> ResolveResult:
-    """Resolve against SQLAlchemy DB session or a list/DataFrame for offline use.
+def _digits(norm: str) -> set[str]:
+    return {t for t in norm.split() if t.isdigit()}
 
-    Return contract: ResolveResult(institution_id, confidence, method, candidates, needs_review).
-    Scores are in [0, 1]. Fuzzy >= .92 auto-matches; .75-.92 requires review.
+
+def _cand(row, score):
+    return {"id": _get(row, "id", "institution_id"), "name": _get(row, "name", "institution_name"), "score": round(score, 4)}
+
+
+def resolve_institution(db, name: str | None = None, aicte_id: str | None = None) -> ResolveResult:
+    """Resolve against a SQLAlchemy session, or a list/DataFrame of dicts for offline use.
+
+    Order: exact AICTE permanent ID -> normalised fuzzy name.
+    Fuzzy >= 0.92 (and not tied) auto-matches; 0.75-0.92 or ties need human review; below 0.75 no match.
+    Names that differ in a numeric token ("... 1" vs "... 11") are never auto-matched.
     """
-    if not (name and str(name).strip()) and not (aicte_id and str(aicte_id).strip()):
+    has_name = bool(name and str(name).strip())
+    has_id = bool(aicte_id and str(aicte_id).strip())
+    if not has_name and not has_id:
         return ResolveResult()
 
-    # Allow DataFrame/list inputs for reproducible offline evaluation and tests.
-    if hasattr(db, "columns") or isinstance(db, (list, tuple)):
+    offline = hasattr(db, "columns") or isinstance(db, (list, tuple))
+    model = None
+    records = None
+    if offline:
         records = _rows(db)
     else:
-        model = _model(db, "institutions")
-        if aicte_id:
-            id_col = getattr(model, "aicte_permanent_id", None)
-            if id_col is None:
-                id_col = getattr(model, "aicte_id", None)
-            if id_col is not None:
-                exact = db.query(model).filter(id_col == aicte_id).first()
-                if exact:
-                    return ResolveResult(_get(exact, "id", "institution_id"), 1.0, "EXACT_ID", [{"id": _get(exact, "id", "institution_id"), "name": _get(exact, "name", "institution_name"), "score": 1.0}], False)
+        model = _db_institution_model(db)
+        if has_id:
+            exact = db.query(model).filter(model.aicte_permanent_id == str(aicte_id).strip()).first()
+            if exact is not None:
+                return ResolveResult(exact.id, 1.0, "EXACT_ID", [_cand(exact, 1.0)], False)
+        if not has_name:
+            return ResolveResult()
         records = db.query(model).all()
 
-    if aicte_id:
-        matches = [r for r in records if str(_get(r, "aicte_permanent_id", "aicte_id", default="") or "").strip().casefold() == str(aicte_id).strip().casefold()]
-        if len(matches) == 1:
-            r = matches[0]
-            return ResolveResult(_get(r, "id", "institution_id"), 1.0, "EXACT_ID", [{"id": _get(r, "id", "institution_id"), "name": _get(r, "name", "institution_name"), "score": 1.0}], False)
+    if has_id and offline:
+        wanted = str(aicte_id).strip().casefold()
+        hits = [r for r in records if str(_get(r, "aicte_permanent_id", "aicte_id", default="") or "").strip().casefold() == wanted]
+        if len(hits) == 1:
+            return ResolveResult(_get(hits[0], "id", "institution_id"), 1.0, "EXACT_ID", [_cand(hits[0], 1.0)], False)
 
-    query = normalize_name(name)
+    query = normalize_name(name) if has_name else ""
     if not query:
         return ResolveResult()
-    scored = []
-    for row in records:
-        row_name = _get(row, "name", "institution_name", default="")
-        norm = normalize_name(row_name)
-        if not norm:
+    norm_names = [normalize_name(_get(r, "name", "institution_name", default="")) for r in records]
+    best_by_idx: dict[int, float] = {}
+    for scorer in (fuzz.ratio, fuzz.token_set_ratio):
+        for _choice, score, idx in process.extract(query, norm_names, scorer=scorer, limit=10):
+            if norm_names[idx]:
+                best_by_idx[idx] = max(best_by_idx.get(idx, 0.0), score / 100.0)
+    qdigits = _digits(query)
+    ranked = []
+    for idx, score in best_by_idx.items():
+        cdigits = _digits(norm_names[idx])
+        if qdigits and cdigits and qdigits != cdigits:
+            score = min(score, AUTO_MATCH - 0.01)          # number mismatch -> human review at best
+        ranked.append((score, idx))
+    ranked.sort(key=lambda t: (-t[0], t[1]))
+
+    candidates, seen = [], set()
+    for score, idx in ranked:
+        rid = _get(records[idx], "id", "institution_id")
+        if rid in seen:
             continue
-        score = max(fuzz.ratio(query, norm), fuzz.token_set_ratio(query, norm)) / 100.0
-        scored.append((score, row))
-    scored.sort(key=lambda item: item[0], reverse=True)
-    candidates = []
-    seen_ids = set()
-    for score, row in scored:
-        rid = _get(row, "id", "institution_id")
-        if rid in seen_ids:
-            continue
-        seen_ids.add(rid)
-        if score < REVIEW_MATCH and len(candidates) >= 3:
-            break
-        candidates.append({"id": rid, "name": _get(row, "name", "institution_name"), "score": round(score, 4)})
+        seen.add(rid)
+        candidates.append(_cand(records[idx], score))
         if len(candidates) >= 5:
             break
-    if not candidates or candidates[0]["score"] < REVIEW_MATCH:
-        return ResolveResult(None, candidates[0]["score"] if candidates else 0.0, "NONE", candidates, bool(candidates))
+    if not candidates:
+        return ResolveResult()
     best = candidates[0]
+    if best["score"] < REVIEW_MATCH:
+        # nothing close enough to suggest; keep candidates for the UI but do not flag as needing review
+        return ResolveResult(None, best["score"], "NONE", candidates[:3], False)
     tied = len(candidates) > 1 and abs(best["score"] - candidates[1]["score"]) < 0.015
     if best["score"] >= AUTO_MATCH and not tied:
         return ResolveResult(best["id"], best["score"], "FUZZY", candidates, False)

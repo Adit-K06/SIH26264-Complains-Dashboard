@@ -1,14 +1,15 @@
 """Create deterministic, explicitly synthetic SIH26264 training/evaluation data."""
 import random
 from datetime import datetime, timedelta
-from pathlib import Path
 import pandas as pd
+
+from .paths import data_dir
 
 SEED = 42
 INSTITUTION_COUNT = 600
 COMPLAINT_COUNT = 6000
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DATA_DIR = PROJECT_ROOT / "data"
+# Fixed anchor so the dataset is byte-for-byte reproducible (it used datetime.now()).
+ANCHOR = datetime(2026, 10, 24, 12, 0, 0)
 BUREAUS = ["RB", "PGRC", "APPROVAL", "ACADEMIC", "FINANCE"]
 CATEGORIES = ["fee refund", "faculty salary", "infrastructure", "affiliation/approval", "ragging", "admission irregularity", "fake documents"]
 OPEN_STATUSES = ["PENDING", "UNDER_PROCESS", "ESCALATED", "TRANSFERRED"]
@@ -29,7 +30,7 @@ def generate_institutions(rng):
     return pd.DataFrame([{"institution_id":f"SYN-{i:05d}","institution_name":f"Demo {rng.choice(KINDS)} {i}","state":rng.choice(STATES),"aicte_id":f"SYN-AICTE-{i:05d}","source":"SYNTHETIC","is_synthetic":True} for i in range(1, INSTITUTION_COUNT+1)])
 
 def generate_complaints(institutions, rng):
-    now = datetime.now().replace(microsecond=0); start = now - timedelta(days=548)
+    now = ANCHOR; start = now - timedelta(days=548)
     cases=[]; labels=[]; n=1
     def add(inst, cat, bureau, status, summary, created, group="", complainant=""):
         nonlocal n
@@ -84,8 +85,8 @@ def generate_complaints(institutions, rng):
     return frame, pd.DataFrame(labels), pd.DataFrame(messy)
 
 def main():
-    rng=random.Random(SEED); DATA_DIR.mkdir(parents=True,exist_ok=True); inst=generate_institutions(rng); cases,labels,messy=generate_complaints(inst,rng)
+    rng=random.Random(SEED); DATA_DIR=data_dir(); DATA_DIR.mkdir(parents=True,exist_ok=True); inst=generate_institutions(rng); cases,labels,messy=generate_complaints(inst,rng)
     inst.to_csv(DATA_DIR/"institutions.csv",index=False); cases.to_csv(DATA_DIR/"complaints.csv",index=False); labels.to_csv(DATA_DIR/"labels.csv",index=False); messy.to_csv(DATA_DIR/"messy_institution_names.csv",index=False)
     print(f"Synthetic data generated: {len(inst)} institutions, {len(cases)} cases, {sum(labels.label==1)} positive pairs, {sum(labels.label==0)} negative pairs, {len(messy)} messy names.")
-    print("All records are synthetic; not real AICTE data.")
+    print(f"Written to {DATA_DIR}. All records are synthetic; not real AICTE data.")
 if __name__=="__main__": main()
