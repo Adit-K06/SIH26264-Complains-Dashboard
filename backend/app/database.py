@@ -12,9 +12,20 @@ DEFAULT_DATABASE_URL = "postgresql+psycopg://sih:sihpass@localhost:5432/sih"
 DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
 
 
+def normalize_db_url(url: str) -> str:
+    if not url:
+        return url
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg://", 1)
+    if url.startswith("postgresql://") and not url.startswith("postgresql+"):
+        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return url
+
+
 def get_engine(url: str | None = None) -> Engine:
     """Create a SQLAlchemy engine supporting both SQLite and PostgreSQL."""
-    target_url = url or os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+    raw_url = url or os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+    target_url = normalize_db_url(raw_url)
     if target_url.startswith("sqlite"):
         return create_engine(
             target_url,

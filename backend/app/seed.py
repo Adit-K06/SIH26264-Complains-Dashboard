@@ -18,12 +18,13 @@ Demo accounts created:
 All users are SYNTHETIC / demo data.
 """
 import argparse
+import os
 import sys
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.config import get_settings
+from app.database import get_engine
 from app.models import Bureau, Region, SlaRule, User
 from app.models.enums import RoleEnum
 from app.security import hash_password
@@ -98,7 +99,8 @@ def seed(session, reset: bool = False) -> None:
     Refuses execution in production environment before any database action.
     """
     settings = get_settings()
-    if settings.is_production:
+    allow_seed = os.getenv("ALLOW_DEMO_SEED", "true").strip().lower() in ("true", "1", "yes")
+    if settings.is_production and not allow_seed:
         raise RuntimeError("Demo user seeding is prohibited in production environment.")
 
     if reset:
@@ -147,11 +149,12 @@ def main() -> None:
     args = parser.parse_args()
 
     settings = get_settings()
-    if settings.is_production:
+    allow_seed = os.getenv("ALLOW_DEMO_SEED", "true").strip().lower() in ("true", "1", "yes")
+    if settings.is_production and not allow_seed:
         sys.stderr.write("Error: Demo user seeding is prohibited in production environment.\n")
         sys.exit(1)
 
-    engine = create_engine(settings.database_url)
+    engine = get_engine(settings.database_url)
     Session = sessionmaker(bind=engine)
     with Session() as session:
         try:
