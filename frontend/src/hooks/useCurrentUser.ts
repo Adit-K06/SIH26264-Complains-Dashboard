@@ -1,30 +1,45 @@
-import { useMemo } from 'react'
-import { ROLES } from '../api/caseDetailTypes'
-import type { Role } from '../api/caseDetailTypes'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '../api/client'
 import type { CurrentUser } from '../lib/casePermissions'
 
+interface MeResponse {
+  id: number
+  name: string
+  email: string
+  role: string
+  bureau_id: number | null
+  region_id: number | null
+  active: boolean
+}
+
+async function fetchMe(): Promise<MeResponse> {
+  const res = await api.get('/auth/me')
+  return res.data
+}
+
 /**
- * TEMPORARY. There is no auth in the app yet, so this returns a mock user.
- * To test other roles, run in the browser console, then reload:
- *   localStorage.setItem('mock_role', 'SENIOR_MGMT')   // or REGIONAL_OFFICER / ADMIN / BUREAU_OFFICER
- *   localStorage.setItem('mock_bureau_id', '1')        // 1=RB 2=PGRC 3=APPROVAL 4=ACADEMIC 5=FINANCE
- *   localStorage.setItem('mock_region_id', '4')        // 1..7 as in lib/lookups.ts
- * When real auth (GET /auth/me) is wired, replace the body of this hook only.
+ * Returns the currently authenticated user from GET /auth/me.
+ * Falls back to a safe mock if no token is stored (should not happen
+ * since App.tsx guards the layout behind a login check).
  */
 export function useCurrentUser(): CurrentUser {
-  return useMemo(() => {
-    const r = localStorage.getItem('mock_role') ?? ''
-    const role: Role = (ROLES as readonly string[]).includes(r) ? (r as Role) : 'BUREAU_OFFICER'
-    const num = (key: string, fallback: number) => {
-      const n = Number(localStorage.getItem(key))
-      return Number.isInteger(n) && n > 0 ? n : fallback
-    }
-    return {
-      id: 1,
-      name: 'Demo User (mock)',
-      role,
-      bureau_id: num('mock_bureau_id', 2),
-      region_id: num('mock_region_id', 4),
-    }
-  }, [])
+  const { data } = useQuery({
+    queryKey: ['auth', 'me'],
+    queryFn: fetchMe,
+    staleTime: 5 * 60 * 1000,   // 5 min
+    retry: false,
+    enabled: !!localStorage.getItem('access_token'),
+  })
+
+  if (!data) {
+    return { id: 0, name: 'Loading…', role: 'BUREAU_OFFICER', bureau_id: null, region_id: null }
+  }
+
+  return {
+    id: data.id,
+    name: data.name,
+    role: data.role as CurrentUser['role'],
+    bureau_id: data.bureau_id,
+    region_id: data.region_id,
+  }
 }

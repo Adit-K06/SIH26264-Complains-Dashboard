@@ -1,23 +1,52 @@
+import { useState, useEffect } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import AppLayout from './components/AppLayout'
-import AlertsPage from './pages/AlertsPage'
-import CaseDetailPage from './pages/CaseDetailPage'
-import CasesPage from './pages/CasesPage'
+import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
-import EvaluationPage from './pages/EvaluationPage'
-import ImportPage from './pages/ImportPage'
-import InstitutionDetailPage from './pages/InstitutionDetailPage'
+import CasesPage from './pages/CasesPage'
+import CaseDetailPage from './pages/CaseDetailPage'
 import InstitutionsPage from './pages/InstitutionsPage'
+import InstitutionDetailPage from './pages/InstitutionDetailPage'
 import OverlapCenterPage from './pages/OverlapCenterPage'
-import Placeholder from './pages/Placeholder'
+import AlertsPage from './pages/AlertsPage'
 import ReportsPage from './pages/ReportsPage'
+import ImportPage from './pages/ImportPage'
+import EvaluationPage from './pages/EvaluationPage'
+import Placeholder from './pages/Placeholder'
 
-// Built: Dashboard, Cases list + detail, Overlap Center, Institutions list + 360, Alerts, Reports,
-// Import, Evaluation. The catch-all keeps unknown URLs from showing a blank page.
+function useAuth() {
+  const [isLoggedIn, setIsLoggedIn] = useState(
+    () => !!localStorage.getItem('access_token')
+  )
+
+  // Listen for storage changes (logout from another tab)
+  useEffect(() => {
+    const handler = () => setIsLoggedIn(!!localStorage.getItem('access_token'))
+    window.addEventListener('storage', handler)
+    return () => window.removeEventListener('storage', handler)
+  }, [])
+
+  function login() { setIsLoggedIn(true) }
+
+  function logout() {
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
+    setIsLoggedIn(false)
+  }
+
+  return { isLoggedIn, login, logout }
+}
+
 export default function App() {
+  const { isLoggedIn, login, logout } = useAuth()
+
+  if (!isLoggedIn) {
+    return <LoginPage onLogin={login} />
+  }
+
   return (
     <Routes>
-      <Route element={<AppLayout />}>
+      <Route element={<AppLayout onLogout={logout} />}>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="cases" element={<CasesPage />} />
