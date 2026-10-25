@@ -18,40 +18,43 @@ async function fetchMe(): Promise<MeResponse> {
   return res.data
 }
 
+function getMockUser(): CurrentUser {
+  try {
+    const raw = localStorage.getItem('mock_user')
+    if (raw) {
+      const u = JSON.parse(raw) as { name?: string; role?: string }
+      return {
+        id: 1,
+        name: u.name ?? 'Demo User',
+        role: (u.role ?? 'SENIOR_MGMT') as CurrentUser['role'],
+        bureau_id: null,
+        region_id: null,
+      }
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return { id: 1, name: 'Demo User', role: 'SENIOR_MGMT', bureau_id: null, region_id: null }
+}
+
 /**
- * Returns the currently authenticated user from GET /auth/me.
- * In mock mode, reads from the mock_user key set during mock login.
- * Falls back to a safe default if data is not yet loaded.
+ * Returns the currently authenticated user.
+ * In mock/demo mode: reads from localStorage (set during mock login).
+ * In real API mode: fetches from GET /auth/me.
  */
 export function useCurrentUser(): CurrentUser {
-  // In mock mode, read the stored mock user — no API call needed
-  if (USE_MOCKS) {
-    try {
-      const raw = localStorage.getItem('mock_user')
-      if (raw) {
-        const u = JSON.parse(raw)
-        return {
-          id: 1,
-          name: u.name ?? 'Demo User',
-          role: (u.role ?? 'SENIOR_MGMT') as CurrentUser['role'],
-          bureau_id: null,
-          region_id: null,
-        }
-      }
-    } catch {
-      // ignore parse errors
-    }
-    return { id: 1, name: 'Demo User', role: 'SENIOR_MGMT', bureau_id: null, region_id: null }
-  }
-
-  // eslint-disable-next-line react-hooks/rules-of-hooks
+  // Always call useQuery (hooks must not be conditional) but disable it in mock mode
   const { data } = useQuery({
     queryKey: ['auth', 'me'],
     queryFn: fetchMe,
-    staleTime: 5 * 60 * 1000,   // 5 min
+    staleTime: 5 * 60 * 1000, // 5 min
     retry: false,
-    enabled: !!localStorage.getItem('access_token'),
+    enabled: !USE_MOCKS && !!localStorage.getItem('access_token'),
   })
+
+  if (USE_MOCKS) {
+    return getMockUser()
+  }
 
   if (!data) {
     return { id: 0, name: 'Loading…', role: 'BUREAU_OFFICER', bureau_id: null, region_id: null }
