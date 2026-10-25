@@ -10,18 +10,22 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// On 401: clear tokens and reload to show LoginPage
+// On 401: clear tokens and reload to show LoginPage (skip in mock mode — mock tokens are intentionally fake)
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (axios.isAxiosError(error) && error.response?.status === 401) {
-      // Don't redirect if this is the login call itself
-      const url = error.config?.url ?? ''
-      if (!url.includes('/auth/login')) {
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
-        // Reload: App.tsx will see no token and show LoginPage
-        window.location.reload()
+      const token = localStorage.getItem('access_token') ?? ''
+      const isMockToken = token.startsWith('mock-token-')
+      if (!isMockToken) {
+        // Don't redirect if this is the login call itself
+        const url = error.config?.url ?? ''
+        if (!url.includes('/auth/login')) {
+          localStorage.removeItem('access_token')
+          localStorage.removeItem('refresh_token')
+          // Reload: App.tsx will see no token and show LoginPage
+          window.location.reload()
+        }
       }
     }
     return Promise.reject(error)

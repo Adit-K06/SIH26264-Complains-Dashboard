@@ -1,5 +1,20 @@
 import { useState, type FormEvent } from 'react'
 import { api, errorMessage } from '../api/client'
+import { USE_MOCKS } from '../api/config'
+
+// Mock user credentials for standalone demo mode
+const MOCK_USERS: Record<string, { role: string; name: string }> = {
+  'admin@demo.local':        { role: 'ADMIN',           name: 'Admin' },
+  'mgmt@demo.local':         { role: 'SENIOR_MGMT',     name: 'Senior Management' },
+  'rb.officer@demo.local':   { role: 'BUREAU_OFFICER',  name: 'Rb Officer' },
+  'pgrc.officer@demo.local': { role: 'BUREAU_OFFICER',  name: 'Pgrc Officer' },
+  'regional@demo.local':     { role: 'REGIONAL_OFFICER', name: 'Regional Officer' },
+}
+const MOCK_PASSWORDS: Record<string, string> = {
+  'admin@demo.local': 'admin123',
+  'mgmt@demo.local': 'mgmt123',
+}
+const MOCK_DEFAULT_PASSWORD = 'officer123'
 
 interface LoginProps {
   onLogin: () => void
@@ -16,6 +31,20 @@ export default function LoginPage({ onLogin }: LoginProps) {
     setLoading(true)
     setError(null)
     try {
+      if (USE_MOCKS) {
+        // Standalone demo mode: validate against known demo credentials
+        await new Promise(r => setTimeout(r, 400))
+        const user = MOCK_USERS[email.toLowerCase()]
+        const expectedPw = MOCK_PASSWORDS[email.toLowerCase()] ?? MOCK_DEFAULT_PASSWORD
+        if (!user || password !== expectedPw) {
+          throw new Error('Invalid credentials. Use the demo credentials shown below.')
+        }
+        // Store a synthetic mock token so App.tsx considers us logged in
+        localStorage.setItem('access_token', `mock-token-${email}`)
+        localStorage.setItem('mock_user', JSON.stringify({ ...user, email }))
+        onLogin()
+        return
+      }
       // FastAPI OAuth2PasswordRequestForm expects form-encoded body
       const params = new URLSearchParams()
       params.append('username', email)
