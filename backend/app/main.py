@@ -1,38 +1,64 @@
-"""FastAPI entrypoint. Routers are auto-discovered: any module in app/api/ that defines
-`router` is mounted under /api/v1. This avoids merge conflicts between P1 and P4."""
-import importlib
-import os
-import pkgutil
+"""FastAPI application factory — P0: health endpoint only."""
+from __future__ import annotations
 
-from fastapi import APIRouter, FastAPI
+import logging
+from datetime import datetime, timezone
+
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-import app.api as api_pkg
+from app.config import settings
 
-app = FastAPI(title="SIH26264 Complaint Dashboard (synthetic demo data)")
-cors_origins_raw = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:8000,http://localhost:3000")
-origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
+logging.basicConfig(level=settings.LOG_LEVEL)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="AICTE Complaint Coordination Dashboard",
+    description=(
+        "Integrated Dashboard for Monitoring and Tracking Institution-Related "
+        "Complaint Cases Across AICTE Bureaus/Cells — SIH26264. "
+        "Demo uses synthetic data. SLA values are placeholders, not official AICTE norms."
+    ),
+    version="0.1.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+)
+
+# ---------------------------------------------------------------------------
+# CORS — allow frontend dev server and production nginx origin
+# ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_origin_regex=r"^https://.*\.vercel\.app$",
+    allow_origins=[
+        "http://localhost:5173",   # Vite dev
+        "http://localhost:3000",
+        "http://localhost",
+        "http://web",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-root = APIRouter(prefix="/api/v1")
+
+# ---------------------------------------------------------------------------
+# Health endpoint (P0 requirement)
+# ---------------------------------------------------------------------------
+@app.get("/api/health", tags=["health"])
+def health() -> dict:
+    """Liveness check. Returns service status and UTC timestamp."""
+    return {
+        "status": "ok",
+        "service": "aicte-dashboard-api",
+        "env": settings.APP_ENV,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
-@root.get("/health")
-def health():
-    return {"status": "ok"}
-
-
-for m in pkgutil.iter_modules(api_pkg.__path__):
-    mod = importlib.import_module(f"app.api.{m.name}")
-    r = getattr(mod, "router", None)
-    if r is not None:
-        root.include_router(r)
-
-app.include_router(root)
+# ---------------------------------------------------------------------------
+# Root redirect hint
+# ---------------------------------------------------------------------------
+@app.get("/", include_in_schema=False)
+def root() -> dict:
+    return {"message": "AICTE Complaint Dashboard API. See /api/docs."}

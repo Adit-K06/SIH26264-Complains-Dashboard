@@ -1,0 +1,3 @@
+worker:
+  restart_policy:
+    condition: on-failure

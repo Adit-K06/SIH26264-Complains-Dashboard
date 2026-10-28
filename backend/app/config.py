@@ -1,48 +1,34 @@
-"""Application configuration loaded from environment variables.
+"""Application configuration — loaded from environment variables."""
+from __future__ import annotations
 
-Secrets (JWT_SECRET, DATABASE_URL) must never be hardcoded.
-All values have development-safe defaults; override via .env or environment.
-In production, insecure or missing JWT_SECRET values fail closed immediately.
-"""
-from functools import lru_cache
-
-from pydantic import AliasChoices, Field, model_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    environment: str = Field(
-        default="development",
-        validation_alias=AliasChoices("environment", "app_env", "env"),
-    )
-    database_url: str = "postgresql+psycopg://sih:sihpass@localhost:5432/sih"
-    jwt_secret: str = "change-me"            # MUST be overridden in production
-    jwt_access_minutes: int = 30
-    jwt_refresh_days: int = 7
-    storage_dir: str = "/data/uploads"
-    cors_origins: str = "http://localhost,http://localhost:5173"
-    demo_clock_offset_days: int = 0
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+    # Database
+    DATABASE_URL: str = "postgresql+psycopg2://aicte:aicte@db:5432/aicte"
 
-    @property
-    def is_production(self) -> bool:
-        return self.environment.strip().lower() in ("production", "prod")
+    # JWT
+    SECRET_KEY: str = "change-me-in-production-use-32-char-random-string"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    @model_validator(mode="after")
-    def validate_production_security(self) -> "Settings":
-        if self.is_production:
-            if not self.jwt_secret or not self.jwt_secret.strip():
-                raise ValueError("In production, JWT_SECRET must be set and non-empty.")
-            if self.jwt_secret.strip() == "change-me":
-                raise ValueError("In production, JWT_SECRET cannot use the default 'change-me' value.")
-        return self
+    # App
+    APP_ENV: str = "development"
+    LOG_LEVEL: str = "INFO"
+
+    # Optional AI
+    LLM_ENABLED: bool = False
+    OPENAI_API_KEY: str = ""
+
+    # File uploads
+    MAX_ATTACHMENT_BYTES: int = 10 * 1024 * 1024  # 10 MB
+
+    # Overlap
+    OVERLAP_THRESHOLD: float = 0.45
 
 
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()
-
-
-# Validate settings on module load
-get_settings()
+settings = Settings()

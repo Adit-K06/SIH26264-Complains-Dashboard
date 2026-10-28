@@ -1,59 +1,95 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────
+#  AICTE Complaint Coordination Dashboard — SIH26264
+#  Docker Compose: db + api + worker + web (one URL)
+#  Demo uses synthetic data. SLA values are placeholders,
+#  not official AICTE norms.
+# ─────────────────────────────────────────────────────────────
+
+x-common-env: &common-env
+  DATABASE_URL: postgresql+psycopg2://aicte:aicte@db:5432/aicte
+  SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production-32char}
+  APP_ENV: ${APP_ENV:-development}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  LLM_ENABLED: ${LLM_ENABLED:-false}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+
 services:
+  # ── PostgreSQL 16 ──────────────────────────────────────────
   db:
-    image: postgres:16
-    env_file: .env
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aicte
+      POSTGRES_PASSWORD: aicte
+      POSTGRES_DB: aicte
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+      - ./ops/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    ports:
+      - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U aicte -d aicte"]
       interval: 5s
       timeout: 5s
       retries: 10
-    ports:
-      - "5432:5432"
+      start_period: 10s
 
+  # ── FastAPI backend ────────────────────────────────────────
   api:
-    build: ./backend
-    env_file: .env
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *common-env
     depends_on:
       db:
         condition: service_healthy
-    command: >
-      sh -c "alembic upgrade head &&
-             python -m app.seed &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
-    volumes:
-      - uploads:/data/uploads
-      - ./backend:/app
-      - ./data:/app/data
-      - ./docs:/app/docs
     ports:
       - "8000:8000"
-    environment:
-      - OVERLAP_THRESHOLD=${OVERLAP_THRESHOLD:-0.40}
-      - SIMILARITY_MODE=${SIMILARITY_MODE:-tfidf}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    volumes:
+      - attachments_data:/app/attachments
 
+  # ── APScheduler worker ─────────────────────────────────────
   worker:
-    build: ./backend
-    env_file: .env
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    environment:
+      <<: *common-env
     depends_on:
       db:
         condition: service_healthy
-    command: python -m app.worker.main
-    volumes:
-      - ./backend:/app
-      - ./data:/app/data
-    environment:
-      - OVERLAP_THRESHOLD=${OVERLAP_THRESHOLD:-0.40}
-      - SIMILARITY_MODE=${SIMILARITY_MODE:-tfidf}
+      api:
+        condition: service_healthy
 
+  # ── React frontend (nginx) ─────────────────────────────────
   web:
-    build: ./frontend
-    depends_on:
-      - api
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 volumes:
-  pgdata:
-  uploads:
+  postgres_data:
+  attachments_data:

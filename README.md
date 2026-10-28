@@ -1,222 +1,135 @@
-# SIH26264 — Integrated Complaint Monitoring Dashboard (AICTE)
+# AICTE Complaint Coordination Dashboard — SIH26264
 
-> **All data in this project is SYNTHETIC. SLA values are PLACEHOLDERS, not official AICTE norms.**
+> **Demo uses synthetic data. SLA values are placeholders, not official AICTE norms.**
 
-A full-stack web application for monitoring and tracking institution-related complaint cases across AICTE Bureaus/Cells. It is a coordination layer over existing Bureau systems — it does **not** replace them.
-
----
-
-## 🏗️ Architecture
-
-| Layer | Technology |
-|---|---|
-| **Frontend** | React 18, Vite, TypeScript, Tailwind CSS v4, TanStack Query/Table, Recharts, React Router v7 |
-| **Backend API** | Python 3.11, FastAPI, Pydantic v2, SQLAlchemy 2, Alembic, PostgreSQL 16 |
-| **AI/ML** | RapidFuzz (fuzzy institution matching), scikit-learn TF-IDF (complaint overlap detection) |
-| **Background Worker** | APScheduler |
-| **Infrastructure** | Docker, Docker Compose, nginx |
+Integrated Dashboard for Monitoring and Tracking Institution-Related Complaint Cases Across AICTE Bureaus/Cells.
 
 ---
 
-## 🚀 Quick Start (Docker — Recommended)
+## Quick Start
 
-### Prerequisites
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
-- Git
-
-### 1. Clone & Setup
 ```bash
-git clone <your-repo-url>
-cd sih26264-complaint-dashboard
+# 1. Copy environment template
 cp .env.example .env
+
+# 2. Build and start all services (db + api + worker + web)
+docker compose up --build
+
+# 3. Open browser at http://localhost
 ```
 
-> **Optional:** Edit `.env` to set a strong `JWT_SECRET` for production. The defaults are development-only.
-
-### 2. Start All Services
-```bash
-docker compose up --build -d
-```
-
-This starts:
-- **PostgreSQL 16** database on port 5432
-- **FastAPI** backend API on port 8000
-- **APScheduler** background worker
-- **React/nginx** frontend on port 80
-
-### 3. Run Database Migrations + Seed Data
-```bash
-# Run schema migrations
-docker compose exec api alembic upgrade head
-
-# Seed demo users (admin, managers, officers)
-docker compose exec api python -m app.seed
-
-# Seed synthetic institution + complaint data (AI module)
-docker compose exec api python -m app.ai.seed --reset
-```
-
-### 4. Open the App
-- **Dashboard:** http://localhost
-- **API docs (Swagger):** http://localhost:8000/docs
-- **API health:** http://localhost:8000/api/v1/health
+The dashboard is available at **http://localhost** (port 80).  
+API docs available at **http://localhost/api/docs**.
 
 ---
 
-## 🔐 Demo Credentials
+## Demo Credentials
 
-| Email | Password | Role |
+> **Password for all demo accounts: `Demo@12345`**
+
+| Username | Role | Access |
 |---|---|---|
-| `admin@demo.local` | `admin123` | ADMIN |
-| `mgmt@demo.local` | `mgmt123` | SENIOR_MGMT |
-| `rb.officer@demo.local` | `officer123` | BUREAU_OFFICER (RB) |
-| `pgrc.officer@demo.local` | `officer123` | BUREAU_OFFICER (PGRC) |
-| `regional@demo.local` | `officer123` | REGIONAL_OFFICER (Northern) |
+| `admin` | ADMIN | Full access + admin panel |
+| `senior` | SENIOR_MGMT | Read all + escalate |
+| `rb_officer` | BUREAU_OFFICER | RB bureau only |
+| `pgrc_officer` | BUREAU_OFFICER | PGRC bureau only |
+| `regional_north` | REGIONAL_OFFICER | Northern region only |
+
+*(Accounts seeded in P2. Seed command: `docker compose exec api python -m app.seed`)*
 
 ---
 
-## 💻 Local Development (without Docker)
+## Architecture
 
-### Backend
+```
+http://localhost (port 80)
+└── nginx (web container)
+    ├── /          → React SPA (built from frontend/)
+    └── /api/      → FastAPI backend (api container, port 8000)
+                       └── PostgreSQL 16 (db container, port 5432)
+                       └── APScheduler worker (worker container)
+```
+
+## Services
+
+| Service | Container | Port |
+|---|---|---|
+| Frontend (React/nginx) | `web` | 80 |
+| Backend (FastAPI) | `api` | 8000 |
+| Worker (APScheduler) | `worker` | — |
+| Database (PostgreSQL 16) | `db` | 5432 |
+
+---
+
+## Development
+
+### Backend (local, without Docker)
+
 ```bash
 cd backend
 python -m venv .venv
-.venv\Scripts\activate    # Windows
-# source .venv/bin/activate  # Mac/Linux
-
+.venv\Scripts\activate  # Windows
 pip install -r requirements.txt
 
-# Needs a running PostgreSQL. Update DATABASE_URL in .env
-alembic upgrade head
-python -m app.seed
-python -m app.ai.seed --reset
-uvicorn app.main:app --reload --port 8000
+# Run tests
+python -m pytest
+
+# Start API server (requires PostgreSQL running)
+uvicorn app.main:app --reload
 ```
 
-### Frontend
+### Frontend (local, without Docker)
+
 ```bash
 cd frontend
 npm install
-# .env.local already has VITE_USE_MOCKS=false to use real backend
-npm run dev
+npm run dev    # starts at http://localhost:5173
 ```
-
-Frontend dev server runs on http://localhost:5173. API requests are proxied to `http://localhost:8000`.
-
-> To use mock data instead of a real backend: set `VITE_USE_MOCKS=true` in `frontend/.env.local`.
 
 ---
 
-## 🧪 Testing
+## Running Tests
 
-### Backend Tests
 ```bash
-cd backend
-pytest
-```
+# Backend unit + integration tests
+cd backend && python -m pytest -v
 
-### AI/ML Evaluation
-```bash
-# Inside Docker container:
-docker compose exec api python -m app.ai.evaluate
-```
+# Overlap evaluation (P7 onwards)
+cd backend && python -m app.ai.evaluate
 
----
-
-## 📁 Project Structure
-
-```
-sih26264-complaint-dashboard/
-├── backend/               # FastAPI application + AI/ML modules
-│   ├── app/
-│   │   ├── api/           # REST API routers (auto-mounted)
-│   │   ├── ai/            # Institution resolver + overlap detector
-│   │   ├── models/        # SQLAlchemy ORM models
-│   │   ├── worker/        # APScheduler background tasks
-│   │   ├── main.py        # FastAPI app entry point
-│   │   ├── auth.py        # JWT auth + RBAC helpers
-│   │   ├── config.py      # Pydantic settings
-│   │   ├── database.py    # SQLAlchemy session
-│   │   ├── security.py    # Password hashing + JWT
-│   │   └── seed.py        # Demo user seeder
-│   ├── alembic/           # Database migrations
-│   ├── tests/             # pytest test suite
-│   ├── Dockerfile
-│   └── requirements.txt
-├── frontend/              # React + Vite application
-│   ├── src/
-│   │   ├── api/           # API client + type definitions + mocks
-│   │   ├── components/    # Reusable React components
-│   │   ├── hooks/         # Custom React hooks
-│   │   ├── lib/           # Utility functions
-│   │   └── pages/         # Page-level components
-│   ├── Dockerfile         # Multi-stage build (Node → nginx)
-│   ├── nginx.conf         # nginx proxy + SPA fallback config
-│   └── package.json
-├── data/                  # Synthetic CSV datasets
-├── docs/                  # AI evaluation reports
-├── docker-compose.yml     # All services
-├── .env.example           # Environment variable template
-├── .gitignore
-└── README.md
+# Frontend E2E (Playwright, P16 onwards)
+cd frontend && npx playwright test
 ```
 
 ---
 
-## 🤖 AI/ML Features
+## Phase Status
 
-### Institution Resolver (`app.ai.institution_resolver`)
-- **Exact AICTE ID match** → confidence 1.0
-- **Fuzzy name matching** (RapidFuzz) → auto-match ≥0.92, human review 0.75–0.92
-- Handles abbreviations (inst/instt, engg, tech, coll, univ, govt)
-
-### Overlap Detector (`app.ai.overlap`)
-- **Tier A:** Institution with open cases in ≥2 distinct bureaus → coordination alert
-- **Tier B:** Pairwise complaint similarity scoring:
-  - Text similarity: 45% (TF-IDF cosine, word + char n-grams)
-  - Category match: 30%
-  - Time proximity: 15%
-  - Reference/complainant overlap: 10%
-  - Threshold: 0.40 (configurable)
-
----
-
-## 🔧 Environment Variables
-
-| Variable | Default | Description |
+| Phase | Description | Status |
 |---|---|---|
-| `POSTGRES_USER` | `sih` | Database user |
-| `POSTGRES_PASSWORD` | `sihpass` | Database password (**change in production**) |
-| `POSTGRES_DB` | `sih` | Database name |
-| `DATABASE_URL` | `postgresql+psycopg://sih:sihpass@db:5432/sih` | Full connection string |
-| `JWT_SECRET` | `change-me` | JWT signing secret (**MUST change in production**) |
-| `JWT_ACCESS_MINUTES` | `30` | Access token lifetime |
-| `JWT_REFRESH_DAYS` | `7` | Refresh token lifetime |
-| `CORS_ORIGINS` | `http://localhost,...` | Allowed CORS origins |
-| `STORAGE_DIR` | `/data/uploads` | File upload storage path |
+| P0 | Monorepo, Docker Compose, Health, CI | ✅ Done |
+| P1 | Schema + Alembic migrations | ⏳ Next |
+| P2 | Auth + RBAC | ⏳ Pending |
+| P3–P17 | See AGENTS.md | ⏳ Pending |
 
 ---
 
-## 📋 API Endpoints
+## Limitations & Disclaimers
 
-| Category | Endpoints |
-|---|---|
-| Auth | `POST /auth/login`, `POST /auth/refresh`, `GET /auth/me` |
-| Cases | `GET/POST /cases`, `GET/PATCH /cases/{id}`, transitions: transfer, escalate, dispose, reopen |
-| Institutions | `GET /institutions`, `GET /institutions/{id}`, `GET /institutions/resolve` |
-| Overlaps | `GET /overlaps`, `POST /overlaps/scan`, `POST /overlaps/{id}/link`, `POST /overlaps/{id}/dismiss` |
-| Dashboard | `GET /dashboard/summary`, `/dashboard/workload`, `/dashboard/ageing` |
-| Reports | `GET /reports/{type}?format=csv|json|pdf` |
-| Alerts | `GET /alerts`, `POST /alerts/{id}/read` |
-| Import | `POST /ingest/cases` (API key), `POST /import/cases-csv` |
-| Admin | `GET /admin/sla-rules`, `PUT /admin/sla-rules/{id}`, `GET /admin/users`, `GET /admin/evaluation` |
-
-Full interactive docs: http://localhost:8000/docs
+- All data is **synthetic** (generated with seed 42). No real AICTE complaint data is used.
+- Bureau names (RB, PGRC, APPROVAL, ACADEMIC, FINANCE) and region names are **assumptions**.
+- SLA timelines (21-day CPGRAMS, 30-day RTI) are **placeholder defaults**, not official AICTE norms.
+- This system is a **monitoring/coordination layer** — it does not replace existing bureau systems.
+- AI features (feature flag `LLM_ENABLED=true`) generate **draft suggestions only**; all decisions remain with officers.
 
 ---
 
-## ⚠️ Disclaimer
+## Backup
 
-- All institution names, complaint data, and case numbers are **entirely synthetic** and generated for demonstration purposes only.
-- SLA values are **placeholders** and do not represent official AICTE norms or policies.
-- This application does **not** connect to any real AICTE systems.
+```bash
+# Backup PostgreSQL data
+docker compose exec db pg_dump -U aicte aicte > backup_$(date +%Y%m%d).sql
+
+# Restore
+docker compose exec -T db psql -U aicte aicte < backup_20260101.sql
+```

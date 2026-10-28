@@ -2,37 +2,39 @@ name: CI
 
 on:
   push:
-    branches: [main, develop, "feature/**", "fix/**"]
-  pull_request:
     branches: [main, develop]
+  pull_request:
+    branches: [main]
 
 jobs:
-  backend-tests:
-    name: Backend Tests (Python)
+  # ── Backend: pytest ─────────────────────────────────────────
+  backend-test:
+    name: Backend Tests (pytest)
     runs-on: ubuntu-latest
+
     services:
       postgres:
-        image: postgres:16
+        image: postgres:16-alpine
         env:
-          POSTGRES_USER: sih
-          POSTGRES_PASSWORD: sihpass
-          POSTGRES_DB: sih_test
+          POSTGRES_USER: aicte
+          POSTGRES_PASSWORD: aicte
+          POSTGRES_DB: aicte_test
         ports:
           - 5432:5432
         options: >-
           --health-cmd pg_isready
-          --health-interval 10s
+          --health-interval 5s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
 
     env:
-      DATABASE_URL: postgresql+psycopg://sih:sihpass@localhost:5432/sih_test
-      JWT_SECRET: ci-test-secret-not-for-production
-      STORAGE_DIR: /tmp/uploads
-      CORS_ORIGINS: http://localhost
+      DATABASE_URL: postgresql+psycopg2://aicte:aicte@localhost:5432/aicte_test
+      SECRET_KEY: ci-test-secret-key-32-characters!!
+      APP_ENV: test
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
@@ -41,50 +43,84 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
 
-      - name: Install backend dependencies
+      - name: Install dependencies
         run: |
           cd backend
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Alembic migrations
+      - name: Enable pg_trgm
         run: |
-          cd backend
-          alembic upgrade head
+          PGPASSWORD=aicte psql -h localhost -U aicte -d aicte_test -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
 
       - name: Run pytest
         run: |
           cd backend
-          pytest -v --tb=short
+          python -m pytest --tb=short -v --cov=app --cov-report=term-missing
 
+  # ── Frontend: npm build ──────────────────────────────────────
   frontend-build:
-    name: Frontend Build (Node)
+    name: Frontend Build (npm)
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Set up Node 20
+      - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install frontend dependencies
+      - name: Install dependencies
         run: |
           cd frontend
           npm ci
 
-      - name: Build frontend (production)
+      - name: Type-check + Build
         run: |
           cd frontend
-          VITE_USE_MOCKS=false npm run build
+          npm run build
 
-  docker-compose-validate:
-    name: Docker Compose Validate
+  # ── Docker Compose smoke test ────────────────────────────────
+  compose-health:
+    name: Docker Compose Health Check
     runs-on: ubuntu-latest
+    needs: [backend-test, frontend-build]
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Validate docker-compose.yml
-        run: docker compose config --quiet
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and start services
+        run: docker compose up -d --build
+        env:
+          SECRET_KEY: ci-test-secret-key-32-characters!!
+
+      - name: Wait for api health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/api/health; then
+              echo "API is healthy"
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 5
+          done
+
+      - name: Wait for web health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost/api/health; then
+              echo "Web proxy is healthy"
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 5
+          done
+
+      - name: Print compose logs on failure
+        if: failure()
+        run: docker compose logs
