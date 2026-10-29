@@ -4,75 +4,68 @@
 
 @layer base {
   :root {
-    /* Government navy/teal palette — high contrast */
     --background: 210 20% 98%;
     --foreground: 215 25% 12%;
-
     --card: 0 0% 100%;
     --card-foreground: 215 25% 12%;
-
-    --popover: 0 0% 100%;
-    --popover-foreground: 215 25% 12%;
-
-    /* Navy primary */
     --primary: 215 60% 25%;
     --primary-foreground: 0 0% 98%;
-
-    /* Teal secondary */
     --secondary: 180 40% 25%;
     --secondary-foreground: 0 0% 98%;
-
     --muted: 210 15% 93%;
     --muted-foreground: 215 15% 45%;
-
     --accent: 180 35% 90%;
     --accent-foreground: 180 40% 20%;
-
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
-
     --border: 215 20% 88%;
     --input: 215 20% 88%;
-    --ring: 215 60% 25%;
-
-    --radius: 0.4rem;
+    --ring: 180 55% 34%;
+    --radius: 0.6rem;
   }
-}
 
-@layer base {
-  * {
-    @apply border-border;
-  }
+  * { @apply border-border; }
   body {
-    @apply bg-background text-foreground;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    font-size: 15px;
-    line-height: 1.6;
+    @apply bg-background text-foreground antialiased;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    min-width: 320px;
   }
-  h1, h2, h3, h4, h5, h6 {
-    @apply font-semibold tracking-tight;
-  }
+  h1, h2, h3, h4, h5, h6 { @apply font-semibold tracking-tight; }
+  button, input, select, textarea { font: inherit; }
 }
 
-/* Government-grade table styles */
 @layer components {
-  .gov-table {
-    @apply w-full border-collapse text-sm;
+  .form-control {
+    @apply block w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-teal-600 focus:ring-2 focus:ring-teal-100 disabled:cursor-not-allowed disabled:bg-slate-100;
   }
-  .gov-table th {
-    @apply bg-primary text-primary-foreground px-4 py-2 text-left font-medium text-xs uppercase tracking-wider;
+  .button-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-[#153a5b] px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#204d73] focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
   }
-  .gov-table td {
-    @apply px-4 py-2 border-b border-border;
+  .button-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
   }
-  .gov-table tr:hover td {
-    @apply bg-muted/50;
+  .button-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-red-700 px-3.5 py-2.5 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50;
   }
-
-  /* Status badges per spec */
-  .badge-pending    { @apply bg-amber-100 text-amber-800 border border-amber-300; }
-  .badge-under_process { @apply bg-blue-100 text-blue-800 border border-blue-300; }
-  .badge-disposed   { @apply bg-green-100 text-green-800 border border-green-300; }
-  .badge-transferred { @apply bg-purple-100 text-purple-800 border border-purple-300; }
-  .badge-escalated  { @apply bg-red-100 text-red-800 border border-red-300; }
+  .button-warning {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-amber-600 px-3.5 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .gov-table { @apply w-full border-collapse text-sm; }
+  .gov-table th { @apply bg-[#153a5b] px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-white; }
+  .gov-table td { @apply border-b border-slate-100 px-4 py-3 align-top text-sm text-slate-700; }
+  .gov-table tbody tr:hover td { @apply bg-slate-50; }
+  .status-badge { @apply inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap; }
+  .status-pending { @apply border-amber-200 bg-amber-50 text-amber-800; }
+  .status-under-process { @apply border-blue-200 bg-blue-50 text-blue-800; }
+  .status-disposed { @apply border-green-200 bg-green-50 text-green-800; }
+  .status-transferred { @apply border-purple-200 bg-purple-50 text-purple-800; }
+  .status-escalated { @apply border-red-200 bg-red-50 text-red-800; }
+  .priority { @apply inline-flex rounded-md px-2 py-1 text-[11px] font-bold; }
+  .priority-low { @apply bg-slate-100 text-slate-700; }
+  .priority-medium { @apply bg-blue-50 text-blue-700; }
+  .priority-high { @apply bg-red-50 text-red-700; }
 }
+
+.line-clamp-2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }

@@ -1,24 +1,57 @@
-/**
- * App.tsx — P0 stub.
- * Just renders a health-check page until P11 wires the full router.
- */
-function App() {
-  return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 p-8">
-      <div className="text-center space-y-3 max-w-lg">
-        <div className="text-4xl font-bold text-primary">AICTE</div>
-        <h1 className="text-xl font-semibold text-foreground">
-          Complaint Coordination Dashboard
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          SIH26264 — P0 scaffold loaded. Full UI comes in P11.
-        </p>
-        <p className="text-xs text-muted-foreground border-t border-border pt-3 mt-3">
-          Demo uses synthetic data. SLA values are placeholders, not official AICTE norms.
-        </p>
-      </div>
-    </div>
-  )
+import { lazy, Suspense } from 'react'
+import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { useAuth } from './auth/AuthContext'
+import { ProtectedLayout } from './components/Layout'
+import { LoadingState } from './components/Shared'
+import { LoginPage } from './pages/LoginPage'
+
+const CasesPage = lazy(() => import('./pages/CasePages').then((module) => ({ default: module.CasesPage })))
+const CaseDetailPage = lazy(() => import('./pages/CasePages').then((module) => ({ default: module.CaseDetailPage })))
+const InstitutionsPage = lazy(() => import('./pages/CasePages').then((module) => ({ default: module.InstitutionsPage })))
+const InstitutionDetailPage = lazy(() => import('./pages/CasePages').then((module) => ({ default: module.InstitutionDetailPage })))
+const DashboardPage = lazy(() => import('./pages/OtherPages').then((module) => ({ default: module.DashboardPage })))
+const AlertsPage = lazy(() => import('./pages/OtherPages').then((module) => ({ default: module.AlertsPage })))
+const EvaluationPage = lazy(() => import('./pages/OtherPages').then((module) => ({ default: module.EvaluationPage })))
+const OverlapsPage = lazy(() => import('./pages/OtherPages').then((module) => ({ default: module.OverlapsPage })))
+const ReportsPage = lazy(() => import('./pages/OtherPages').then((module) => ({ default: module.ReportsPage })))
+
+function SuspendedPage({ children }: { children: React.ReactNode }) {
+  return <Suspense fallback={<LoadingState label="Opening page…" />}>{children}</Suspense>
 }
 
-export default App
+function RequireAuth() {
+  const { user, ready } = useAuth()
+  const location = useLocation()
+  if (!ready) return <LoadingState label="Checking your session…" />
+  if (!user) return <Navigate to="/login" replace state={{ from: location }} />
+  return <Outlet />
+}
+
+function RequireAdmin() {
+  const { user } = useAuth()
+  return user?.role === 'ADMIN' ? <EvaluationPage /> : <Navigate to="/dashboard" replace />
+}
+
+export default function App() {
+  const { user } = useAuth()
+  return (
+    <Routes>
+      <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
+      <Route element={<RequireAuth />}>
+        <Route element={<ProtectedLayout />}>
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<SuspendedPage><DashboardPage /></SuspendedPage>} />
+          <Route path="cases" element={<SuspendedPage><CasesPage /></SuspendedPage>} />
+          <Route path="cases/:caseId" element={<SuspendedPage><CaseDetailPage /></SuspendedPage>} />
+          <Route path="institutions" element={<SuspendedPage><InstitutionsPage /></SuspendedPage>} />
+          <Route path="institutions/:institutionId" element={<SuspendedPage><InstitutionDetailPage /></SuspendedPage>} />
+          <Route path="overlaps" element={<SuspendedPage><OverlapsPage /></SuspendedPage>} />
+          <Route path="alerts" element={<SuspendedPage><AlertsPage /></SuspendedPage>} />
+          <Route path="reports" element={<SuspendedPage><ReportsPage /></SuspendedPage>} />
+          <Route path="evaluation" element={<SuspendedPage><RequireAdmin /></SuspendedPage>} />
+        </Route>
+      </Route>
+      <Route path="*" element={<Navigate to={user ? '/dashboard' : '/login'} replace />} />
+    </Routes>
+  )
+}

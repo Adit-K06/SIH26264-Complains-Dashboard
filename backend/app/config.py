@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Database
-    DATABASE_URL: str = "postgresql+psycopg2://aicte:aicte@db:5432/aicte"
+    DATABASE_URL: str = "sqlite:///./aicte.db"
 
     # JWT
     SECRET_KEY: str = "change-me-in-production-use-32-char-random-string"

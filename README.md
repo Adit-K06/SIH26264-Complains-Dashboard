@@ -2,134 +2,83 @@
 
 > **Demo uses synthetic data. SLA values are placeholders, not official AICTE norms.**
 
-Integrated Dashboard for Monitoring and Tracking Institution-Related Complaint Cases Across AICTE Bureaus/Cells.
+A monitoring and coordination layer over existing AICTE Bureau/Cell systems. It does not replace them.
 
----
+## Requirements
 
-## Quick Start
+- Python 3.11 or 3.12
+- Node.js and npm
 
-```bash
-# 1. Copy environment template
-cp .env.example .env
+## Local setup
 
-# 2. Build and start all services (db + api + worker + web)
-docker compose up --build
+### Backend
 
-# 3. Open browser at http://localhost
-```
-
-The dashboard is available at **http://localhost** (port 80).  
-API docs available at **http://localhost/api/docs**.
-
----
-
-## Demo Credentials
-
-> **Password for all demo accounts: `Demo@12345`**
-
-| Username | Role | Access |
-|---|---|---|
-| `admin` | ADMIN | Full access + admin panel |
-| `senior` | SENIOR_MGMT | Read all + escalate |
-| `rb_officer` | BUREAU_OFFICER | RB bureau only |
-| `pgrc_officer` | BUREAU_OFFICER | PGRC bureau only |
-| `regional_north` | REGIONAL_OFFICER | Northern region only |
-
-*(Accounts seeded in P2. Seed command: `docker compose exec api python -m app.seed`)*
-
----
-
-## Architecture
-
-```
-http://localhost (port 80)
-└── nginx (web container)
-    ├── /          → React SPA (built from frontend/)
-    └── /api/      → FastAPI backend (api container, port 8000)
-                       └── PostgreSQL 16 (db container, port 5432)
-                       └── APScheduler worker (worker container)
-```
-
-## Services
-
-| Service | Container | Port |
-|---|---|---|
-| Frontend (React/nginx) | `web` | 80 |
-| Backend (FastAPI) | `api` | 8000 |
-| Worker (APScheduler) | `worker` | — |
-| Database (PostgreSQL 16) | `db` | 5432 |
-
----
-
-## Development
-
-### Backend (local, without Docker)
-
-```bash
+```powershell
 cd backend
 python -m venv .venv
-.venv\Scripts\activate  # Windows
-pip install -r requirements.txt
+.venv\Scripts\activate
+python -m pip install -r requirements.txt
+```
 
-# Run tests
-python -m pytest
+Create `backend/.env` with a SQLite URL, a private secret of at least 32 characters, and `APP_ENV=development`. Keep this file local.
 
-# Start API server (requires PostgreSQL running)
+```dotenv
+DATABASE_URL=sqlite:///./aicte.db
+SECRET_KEY=<generate-a-private-secret-of-at-least-32-characters>
+APP_ENV=development
+LLM_ENABLED=false
+```
+
+To generate a secret, run `python -c "import secrets; print(secrets.token_urlsafe(48))"` and paste its output as the `SECRET_KEY` value.
+
+Seed the synthetic demo data and start the API:
+
+```powershell
+python -m app.seed
 uvicorn app.main:app --reload
 ```
 
-### Frontend (local, without Docker)
+The API is available at **http://localhost:8000** and its docs at **http://localhost:8000/docs**.
 
-```bash
+### Frontend
+
+In a second terminal:
+
+```powershell
 cd frontend
 npm install
-npm run dev    # starts at http://localhost:5173
+npm run dev
 ```
 
----
+Vite serves the dashboard at **http://localhost:5173**.
 
-## Running Tests
+## Demo accounts
 
-```bash
-# Backend unit + integration tests
-cd backend && python -m pytest -v
+Password for all demo accounts: `Demo@12345`
 
-# Overlap evaluation (P7 onwards)
-cd backend && python -m app.ai.evaluate
-
-# Frontend E2E (Playwright, P16 onwards)
-cd frontend && npx playwright test
-```
-
----
-
-## Phase Status
-
-| Phase | Description | Status |
+| Username | Role | Access |
 |---|---|---|
-| P0 | Monorepo, Docker Compose, Health, CI | ✅ Done |
-| P1 | Schema + Alembic migrations | ⏳ Next |
-| P2 | Auth + RBAC | ⏳ Pending |
-| P3–P17 | See AGENTS.md | ⏳ Pending |
+| `admin` | ADMIN | Full access and demo clock |
+| `senior` | SENIOR_MGMT | Read all and escalate |
+| `rb_officer` | BUREAU_OFFICER | RB bureau |
+| `pgrc_officer` | BUREAU_OFFICER | PGRC bureau |
+| `regional_north` | REGIONAL_OFFICER | Northern region |
 
----
+## Tests and evaluation
 
-## Limitations & Disclaimers
-
-- All data is **synthetic** (generated with seed 42). No real AICTE complaint data is used.
-- Bureau names (RB, PGRC, APPROVAL, ACADEMIC, FINANCE) and region names are **assumptions**.
-- SLA timelines (21-day CPGRAMS, 30-day RTI) are **placeholder defaults**, not official AICTE norms.
-- This system is a **monitoring/coordination layer** — it does not replace existing bureau systems.
-- AI features (feature flag `LLM_ENABLED=true`) generate **draft suggestions only**; all decisions remain with officers.
-
----
-
-## Backup
-
-```bash
-# Backup PostgreSQL data
-docker compose exec db pg_dump -U aicte aicte > backup_$(date +%Y%m%d).sql
-
-# Restore
-docker compose exec -T db psql -U aicte aicte < backup_20260101.sql
+```powershell
+cd backend
+python -m pytest -v
+python -m app.ai.evaluate
 ```
+
+Frontend build:
+
+```powershell
+cd frontend
+npm run build
+```
+
+## Data and limitations
+
+All demo records are synthetic. No real AICTE complaint data is used. Bureau and region names are assumptions. SLA timelines are placeholders, not official AICTE norms. The dashboard monitors and coordinates work across existing systems.

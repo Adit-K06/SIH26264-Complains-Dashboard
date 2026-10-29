@@ -1,20 +1,11 @@
-# Makefile — convenience targets for common dev tasks
-.PHONY: up down build test test-backend test-frontend migrate seed logs shell-api shell-db
+.PHONY: api web test test-backend test-frontend seed
 
-# ── Docker Compose ──────────────────────────────────────────
-up:
-	docker compose up --build -d
+api:
+	cd backend && python -m uvicorn app.main:app --reload
 
-down:
-	docker compose down
+web:
+	cd frontend && npm run dev
 
-build:
-	docker compose build
-
-logs:
-	docker compose logs -f
-
-# ── Tests ────────────────────────────────────────────────────
 test: test-backend test-frontend
 
 test-backend:
@@ -23,20 +14,5 @@ test-backend:
 test-frontend:
 	cd frontend && npm run build
 
-# ── Database ─────────────────────────────────────────────────
-migrate:
-	docker compose exec api alembic upgrade head
-
 seed:
-	docker compose exec api python -m app.seed
-
-# ── Shell access ─────────────────────────────────────────────
-shell-api:
-	docker compose exec api bash
-
-shell-db:
-	docker compose exec db psql -U aicte aicte
-
-# ── Backup ───────────────────────────────────────────────────
-backup:
-	docker compose exec db pg_dump -U aicte aicte > backup_$(shell date +%Y%m%d_%H%M%S).sql
+	cd backend && python -m app.seed

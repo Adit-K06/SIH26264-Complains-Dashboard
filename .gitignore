@@ -21,7 +21,8 @@ coverage.xml
 # Alembic — keep versions tracked
 backend/alembic/versions/*.py
 
-# Environment secrets — NEVER commit .env
+# Environment secrets and local databases
+*.db
 .env
 .env.local
 .env.production
@@ -44,5 +45,4 @@ backend/attachments/
 .DS_Store
 Thumbs.db
 
-# Docker
 *.log
