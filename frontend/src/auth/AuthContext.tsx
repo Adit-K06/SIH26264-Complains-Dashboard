@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { authApi } from '../api'
-import { useMocks } from '../api/client'
+import { authApi, isMockActive } from '../api'
 import type { User } from '../types'
 
 interface AuthState {
@@ -31,7 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setReady(true)
       return
     }
-    if (useMocks) {
+    if (isMockActive()) {
       if (!user) {
         const cached = readCachedUser()
         if (cached) {

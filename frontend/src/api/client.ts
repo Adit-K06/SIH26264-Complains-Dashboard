@@ -11,6 +11,36 @@ export const useMocks =
   import.meta.env.VITE_USE_MOCKS === 'true' ||
   (!hasBackend && import.meta.env.VITE_USE_MOCKS !== 'false')
 
+let mockFallbackEnabled = false
+
+export function isMockActive(): boolean {
+  return useMocks || mockFallbackEnabled
+}
+
+export function enableMockFallback() {
+  mockFallbackEnabled = true
+}
+
+export async function withFallback<T>(apiCall: () => Promise<T>, mockCall: () => Promise<T>): Promise<T> {
+  if (isMockActive()) {
+    return mockCall()
+  }
+  try {
+    return await apiCall()
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status
+      // If 404 (endpoint not found on backend/Vercel) or Network Error (backend sleeping/unreachable):
+      if (status === 404 || !error.response || error.code === 'ECONNABORTED' || error.message === 'Network Error') {
+        console.warn(`API call failed (status: ${status ?? 'network'}). Transparently switching to demo mock mode.`)
+        enableMockFallback()
+        return mockCall()
+      }
+    }
+    throw error
+  }
+}
+
 const baseURL = configuredBase
   ? (configuredBase.endsWith('/api') ? configuredBase : `${configuredBase}/api`)
   : '/api'

@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { AlertCircle, ArrowRight, GraduationCap, LockKeyhole } from 'lucide-react'
 import { useAuth } from '../auth/AuthContext'
 import { SyntheticFooter } from '../components/Shared'
-import { errorMessage, useMocks } from '../api/client'
+import { errorMessage } from '../api/client'
 
 export function LoginPage() {
   const { ready, login } = useAuth()
@@ -51,7 +51,10 @@ export function LoginPage() {
               <label className="block text-sm font-semibold text-slate-700">Password<div className="relative mt-1.5"><LockKeyhole className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input autoComplete="current-password" type="password" required value={password} onChange={(event) => setPassword(event.target.value)} className="form-control pl-10" placeholder="Enter your password" /></div></label>
               <button disabled={pending || !ready} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#102b46] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#183f63] disabled:cursor-not-allowed disabled:opacity-60">{pending ? 'Signing in…' : 'Sign in'}{!pending && <ArrowRight className="h-4 w-4" />}</button>
             </form>
-            {useMocks && <div className="mt-6 rounded-lg bg-slate-50 p-3 text-xs text-slate-600"><p className="font-semibold text-slate-800">Demo Login (Auto-Filled)</p><p className="mt-1">Username: admin · Password: Demo@12345</p></div>}
+            <div className="mt-6 rounded-lg bg-slate-100 p-3 text-xs text-slate-700 border border-slate-200">
+              <p className="font-semibold text-slate-900">Demo Officer Credentials</p>
+              <p className="mt-1">Username: <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200 font-mono text-slate-900">admin</code> · Password: <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200 font-mono text-slate-900">Demo@12345</code></p>
+            </div>
           </section>
         </div>
       </main>
