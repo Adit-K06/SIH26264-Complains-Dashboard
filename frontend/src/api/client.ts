@@ -1,16 +1,24 @@
 import axios from 'axios'
 
 const configuredBase = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '')
-const baseURL = configuredBase
-  ? configuredBase.endsWith('/api') ? configuredBase : `${configuredBase}/api`
-  : '/api'
+const hasBackend = Boolean(configuredBase)
 
-export const useMocks = import.meta.env.VITE_USE_MOCKS === 'true'
+// Auto-detect mock mode:
+// - Explicitly VITE_USE_MOCKS=true -> use mocks
+// - Explicitly VITE_USE_MOCKS=false -> use real backend
+// - Standalone production preview (e.g. Vercel without backend URL set) -> auto fallback to mocks so app never fails!
+export const useMocks =
+  import.meta.env.VITE_USE_MOCKS === 'true' ||
+  (!hasBackend && import.meta.env.VITE_USE_MOCKS !== 'false')
+
+const baseURL = configuredBase
+  ? (configuredBase.endsWith('/api') ? configuredBase : `${configuredBase}/api`)
+  : '/api'
 
 export const apiClient = axios.create({
   baseURL,
   headers: { 'Content-Type': 'application/json' },
-  timeout: 15000,
+  timeout: 60000, // 60s to accommodate cloud cold starts (e.g. Render free tier)
 })
 
 apiClient.interceptors.request.use((config) => {
@@ -34,8 +42,12 @@ export function errorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
     const apiMessage = error.response?.data?.error?.message
     if (typeof apiMessage === 'string') return apiMessage
-    if (error.code === 'ECONNABORTED') return 'The service took too long to respond. Try again.'
-    if (error.message === 'Network Error') return 'Could not reach the API. Check that the backend is running.'
+    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      return 'The backend service took longer than expected to respond. If running on free cloud tier, the server may be waking up from sleep. Please wait 15 seconds and try again.'
+    }
+    if (error.message === 'Network Error') {
+      return 'Could not connect to the API. If deployed, verify VITE_API_BASE_URL points to your active backend.'
+    }
   }
   return error instanceof Error ? error.message : 'Something went wrong. Try again.'
 }

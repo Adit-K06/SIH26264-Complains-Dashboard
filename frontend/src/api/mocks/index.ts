@@ -4,6 +4,7 @@ import type {
   CaseDetail,
   CaseRecord,
   CaseStatus,
+  CopilotResponse,
   DashboardSummary,
   Institution,
   OverlapFlag,
@@ -229,3 +230,68 @@ export async function mockReport(type: ReportType, format: 'json' | 'csv') {
 export async function mockEvaluation(): Promise<never> {
   throw new Error('The evaluation report is served by the backend. Turn VITE_USE_MOCKS off to view it.')
 }
+
+export async function mockCopilotQuery(query: string): Promise<CopilotResponse> {
+  const q = query.toLowerCase()
+  if (q.includes('overlap') || q.includes('conflict') || q.includes('duplicate')) {
+    const openFlags = overlapRows.filter((f) => f.state === 'OPEN')
+    return {
+      query,
+      intent: 'OVERLAP_LOOKUP',
+      answer: `Found ${openFlags.length} active cross-bureau overlap flags requiring coordination.`,
+      highlight: `${openFlags.length} active overlap cases detected`,
+      items: openFlags.slice(0, 4).map((f) => ({
+        id: f.id,
+        title: f.institution_name ?? 'Unknown Institution',
+        subtitle: `Tier ${f.tier}${f.score != null ? ` • Score ${(f.score * 100).toFixed(0)}%` : ''}`,
+        status: f.state,
+        link: `/overlaps`,
+      })),
+      action: {
+        label: 'Open Overlap Coordination Center',
+        link: '/overlaps',
+      },
+      suggestions: ['Show pending complaints', 'Check workload by bureau', 'Cases beyond SLA'],
+    }
+  }
+  if (q.includes('overdue') || q.includes('sla') || q.includes('pending')) {
+    const pendingCases = caseRows.filter((c) => c.status === 'PENDING')
+    return {
+      query,
+      intent: 'PENDING_STATUS',
+      answer: `There are ${pendingCases.length} pending cases currently tracked across bureaus.`,
+      highlight: `${pendingCases.length} pending complaints`,
+      items: pendingCases.slice(0, 4).map((c) => ({
+        id: c.id,
+        title: c.case_no,
+        subtitle: c.institution_name ?? 'General complaint',
+        status: c.status,
+        link: `/cases/${c.id}`,
+      })),
+      action: {
+        label: 'View Pending Cases',
+        link: '/cases?status=PENDING',
+      },
+      suggestions: ['Show overlapping cases', 'Summary of all cases', 'Overdue cases beyond SLA'],
+    }
+  }
+  return {
+    query,
+    intent: 'GENERAL_QUERY',
+    answer: `Analysis complete for "${query}". Tracking ${caseRows.length} total synthetic complaints in demo mode.`,
+    highlight: `${caseRows.length} total cases recorded`,
+    items: caseRows.slice(0, 4).map((c) => ({
+      id: c.id,
+      title: c.case_no,
+      subtitle: `${c.bureau_code} • ${c.institution_name ?? 'General'}`,
+      status: c.status,
+      link: `/cases/${c.id}`,
+    })),
+    action: {
+      label: 'Go to Dashboard',
+      link: '/dashboard',
+    },
+    suggestions: ['Show open overlaps', 'Pending cases', 'Cases in North region'],
+  }
+}
+

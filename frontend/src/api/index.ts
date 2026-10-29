@@ -177,6 +177,7 @@ export const adminApi = {
 
 export const copilotApi = {
   async query(query: string): Promise<CopilotResponse> {
+    if (useMocks) return mocks.mockCopilotQuery(query)
     const { data } = await apiClient.post('/copilot/query', { query })
     return data
   },
