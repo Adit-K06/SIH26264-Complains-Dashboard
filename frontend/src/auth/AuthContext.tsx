@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { authApi } from '../api'
+import { useMocks } from '../api/client'
 import type { User } from '../types'
 
 interface AuthState {
@@ -30,8 +31,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setReady(true)
       return
     }
-    if (import.meta.env.VITE_USE_MOCKS === 'true') {
-      if (!user) localStorage.removeItem('aicte_access_token')
+    if (useMocks) {
+      if (!user) {
+        const cached = readCachedUser()
+        if (cached) {
+          setUser(cached)
+        } else {
+          localStorage.removeItem('aicte_access_token')
+        }
+      }
       setReady(true)
       return
     }

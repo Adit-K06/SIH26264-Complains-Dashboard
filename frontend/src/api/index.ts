@@ -9,6 +9,7 @@ export const authApi = {
     return data
   },
   async me(): Promise<User> {
+    if (useMocks) return mocks.mockMe()
     const { data } = await apiClient.get('/auth/me')
     return data
   },
@@ -165,6 +166,7 @@ export const reportsApi = {
 
 export const adminApi = {
   async forwardDemo(days: number) {
+    if (useMocks) return mocks.mockForwardDemo(days)
     const { data } = await apiClient.post('/admin/demo/forward', null, { params: { days } })
     return data as { days_forwarded: number; as_of: string; checked: number; due_soon: number; overdue: number; reminders: number; escalations: number }
   },

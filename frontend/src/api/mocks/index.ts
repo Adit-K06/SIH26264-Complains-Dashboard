@@ -227,8 +227,78 @@ export async function mockReport(type: ReportType, format: 'json' | 'csv') {
   return new Blob([`${keys.map(escape).join(',')}\n${rows.map((row) => keys.map((key) => escape(row[key])).join(',')).join('\n')}\n`], { type: 'text/csv' })
 }
 
-export async function mockEvaluation(): Promise<never> {
-  throw new Error('The evaluation report is served by the backend. Turn VITE_USE_MOCKS off to view it.')
+export async function mockMe(): Promise<User> {
+  const cached = localStorage.getItem('aicte_user')
+  if (cached) {
+    try {
+      return JSON.parse(cached) as User
+    } catch {}
+  }
+  return clone(demoUsers.admin)
+}
+
+export async function mockForwardDemo(days: number) {
+  const asOf = new Date(Date.now() + days * 86400000).toISOString()
+  return {
+    days_forwarded: days,
+    as_of: asOf,
+    checked: caseRows.length,
+    due_soon: 3,
+    overdue: 4,
+    reminders: 2,
+    escalations: 1,
+  }
+}
+
+export async function mockEvaluation(): Promise<Record<string, unknown>> {
+  return {
+    disclaimer: 'All records and labels are synthetic. Results describe this demo dataset only and are not operational performance claims.',
+    source: 'SYNTHETIC',
+    split: {
+      strategy: 'fixed-seed institution group holdout',
+      seed: 42,
+      test_size: 0.4,
+      train_rows: 19,
+      test_rows: 13,
+      train_institutions: 19,
+      test_institutions: 13,
+    },
+    model: {
+      score: '0.45*text_sim + 0.30*category_match + 0.15*time_proximity + 0.10*ref_overlap',
+      threshold_tuned_on: 'train split only',
+      selected_threshold: 0.6609589720359174,
+      train_metrics: {
+        precision: 1.0,
+        recall: 1.0,
+        f1: 1.0,
+        confusion_matrix: { tn: 14, fp: 0, fn: 0, tp: 5 },
+      },
+    },
+    held_out: {
+      precision: 0.6666666666666666,
+      recall: 0.8571428571428571,
+      f1: 0.75,
+      confusion_matrix: { tn: 3, fp: 3, fn: 1, tp: 6 },
+    },
+    baseline: {
+      rule: 'same institution + same category + within 30 days',
+      precision: 0.6363636363636364,
+      recall: 1.0,
+      f1: 0.7777777777777778,
+      confusion_matrix: { tn: 2, fp: 4, fn: 0, tp: 7 },
+    },
+    false_positives: [
+      {
+        case_a: 'RB-2026-00028',
+        case_b: 'RB-2026-00029',
+        label: 0,
+        score: 0.672628,
+        kind: 'same_bureau_near_duplicate',
+        summary_a: 'Students requested review of student transcript verification records at the synthetic institution.',
+        summary_b: 'Students asked the bureau to check the student transcript verification records at this synthetic institution.',
+      },
+    ],
+  }
 }
 
 export async function mockCopilotQuery(query: string): Promise<CopilotResponse> {

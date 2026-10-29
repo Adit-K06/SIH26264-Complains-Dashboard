@@ -42,6 +42,9 @@ export function errorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
     const apiMessage = error.response?.data?.error?.message
     if (typeof apiMessage === 'string') return apiMessage
+    if (error.response?.status === 404) {
+      return 'API endpoint not found (404). If deployed without an external backend, the app operates in standalone demo mode.'
+    }
     if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
       return 'The backend service took longer than expected to respond. If running on free cloud tier, the server may be waking up from sleep. Please wait 15 seconds and try again.'
     }
