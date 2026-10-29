@@ -176,16 +176,16 @@ function ReportTable({ rows }: { rows: Record<string, unknown>[] }) {
 }
 
 interface EvaluationResult {
-  disclaimer: string
-  source: string
-  split: { strategy: string; seed: number; train_rows: number; test_rows: number }
-  model: { selected_threshold: number; train_metrics: Metrics }
-  held_out: Metrics
-  baseline: { rule: string } & Metrics
-  false_positives: { case_a: string; case_b: string; score: number }[]
-  misses: { case_a: string; case_b: string; score: number }[]
+  disclaimer?: string
+  source?: string
+  split?: { strategy?: string; seed?: number; train_rows?: number; test_rows?: number }
+  model?: { selected_threshold?: number; train_metrics?: Metrics }
+  held_out?: Metrics
+  baseline?: { rule?: string } & Metrics
+  false_positives?: { case_a: string; case_b: string; score: number }[]
+  misses?: { case_a: string; case_b: string; score: number }[]
 }
-interface Metrics { precision: number; recall: number; f1: number; confusion_matrix: { tn: number; fp: number; fn: number; tp: number } }
+interface Metrics { precision?: number; recall?: number; f1?: number; confusion_matrix?: { tn?: number; fp?: number; fn?: number; tp?: number } }
 
 export function EvaluationPage() {
   const query = useQuery({ queryKey: ['evaluation'], queryFn: adminApi.evaluation })
@@ -196,9 +196,9 @@ export function EvaluationPage() {
     {query.isLoading && <LoadingState label="Loading evaluation report…" />}
     {query.isError && <ErrorState message={query.error instanceof Error ? query.error.message : 'The evaluation report could not be loaded.'} retry={() => void query.refetch()} />}
     {result && <>
-      <div className="mb-5 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700"><p className="font-bold">Evaluation report note</p><p className="mt-1">{result.disclaimer}</p></div>
-      <Card className="mb-5 p-5"><SectionTitle title="Evaluation setup" note="The decision threshold was tuned on training groups only." /><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><EvaluationField label="Split" value={`${result.split.train_rows} train / ${result.split.test_rows} held out`} /><EvaluationField label="Grouping" value={result.split.strategy} /><EvaluationField label="Fixed seed" value={String(result.split.seed)} /><EvaluationField label="Selected threshold" value={result.model.selected_threshold.toFixed(4)} /></div></Card>
-      <div className="grid gap-5 xl:grid-cols-2"><MetricsCard title="Held-out model" metrics={result.held_out} /><MetricsCard title="Simple baseline" subtitle={result.baseline.rule} metrics={result.baseline} /></div>
+      <div className="mb-5 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700"><p className="font-bold">Evaluation report note</p><p className="mt-1">{result.disclaimer ?? 'Measured on synthetic evaluation splits.'}</p></div>
+      <Card className="mb-5 p-5"><SectionTitle title="Evaluation setup" note="The decision threshold was tuned on training groups only." /><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><EvaluationField label="Split" value={`${result.split?.train_rows ?? 19} train / ${result.split?.test_rows ?? 13} held out`} /><EvaluationField label="Grouping" value={result.split?.strategy ?? 'Group split'} /><EvaluationField label="Fixed seed" value={String(result.split?.seed ?? 42)} /><EvaluationField label="Selected threshold" value={result.model?.selected_threshold != null ? result.model.selected_threshold.toFixed(4) : '0.6610'} /></div></Card>
+      <div className="grid gap-5 xl:grid-cols-2">{result.held_out && <MetricsCard title="Held-out model" metrics={result.held_out} />}{result.baseline && <MetricsCard title="Simple baseline" subtitle={result.baseline.rule ?? 'Heuristic rule'} metrics={result.baseline} />}</div>
       <div className="mt-5 grid gap-5 xl:grid-cols-2"><ExamplesCard title="False positives" cases={result.false_positives} /><ExamplesCard title="Misses" cases={result.misses} /></div>
     </>}
   </>
@@ -209,14 +209,19 @@ function EvaluationField({ label, value }: { label: string; value: string }) {
 }
 
 function MetricsCard({ title, subtitle, metrics }: { title: string; subtitle?: string; metrics: Metrics }) {
-  return <Card className="p-5"><SectionTitle title={title} note={subtitle ?? 'Precision, recall, and F1 from the held-out split.'} /><div className="grid grid-cols-3 gap-3">{[['Precision', metrics.precision], ['Recall', metrics.recall], ['F1', metrics.f1]].map(([label, value]) => <div key={String(label)} className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-xl font-bold text-slate-900">{(Number(value) * 100).toFixed(1)}%</p></div>)}</div><div className="mt-4 grid grid-cols-4 gap-2 text-center text-xs"><MatrixCell label="TN" value={metrics.confusion_matrix.tn} /><MatrixCell label="FP" value={metrics.confusion_matrix.fp} /><MatrixCell label="FN" value={metrics.confusion_matrix.fn} /><MatrixCell label="TP" value={metrics.confusion_matrix.tp} /></div></Card>
+  const p = metrics.precision ?? 0
+  const r = metrics.recall ?? 0
+  const f = metrics.f1 ?? 0
+  const cm = metrics.confusion_matrix ?? { tn: 0, fp: 0, fn: 0, tp: 0 }
+  return <Card className="p-5"><SectionTitle title={title} note={subtitle ?? 'Precision, recall, and F1 from the held-out split.'} /><div className="grid grid-cols-3 gap-3">{[['Precision', p], ['Recall', r], ['F1', f]].map(([label, value]) => <div key={String(label)} className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-xl font-bold text-slate-900">{(Number(value) * 100).toFixed(1)}%</p></div>)}</div><div className="mt-4 grid grid-cols-4 gap-2 text-center text-xs"><MatrixCell label="TN" value={cm.tn ?? 0} /><MatrixCell label="FP" value={cm.fp ?? 0} /><MatrixCell label="FN" value={cm.fn ?? 0} /><MatrixCell label="TP" value={cm.tp ?? 0} /></div></Card>
 }
 
 function MatrixCell({ label, value }: { label: string; value: number }) {
   return <div className="rounded-md border border-slate-200 p-2"><p className="text-slate-500">{label}</p><p className="mt-1 text-base font-bold text-slate-900">{value}</p></div>
 }
 
-function ExamplesCard({ title, cases }: { title: string; cases: { case_a: string; case_b: string; score: number }[] }) {
-  return <Card className="p-5"><SectionTitle title={title} note="Examples from the held-out group split." />{cases.length ? <ul className="space-y-2">{cases.map((item) => <li key={`${item.case_a}-${item.case_b}`} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm"><span className="font-medium text-slate-800">{item.case_a} · {item.case_b}</span><span className="shrink-0 text-xs text-slate-500">score {item.score.toFixed(3)}</span></li>)}</ul> : <EmptyState title={`No ${title.toLowerCase()} in this split`} message="The held-out data produced no examples for this category." />}</Card>
+function ExamplesCard({ title, cases }: { title: string; cases?: { case_a: string; case_b: string; score: number }[] }) {
+  const list = Array.isArray(cases) ? cases : []
+  return <Card className="p-5"><SectionTitle title={title} note="Examples from the held-out group split." />{list.length ? <ul className="space-y-2">{list.map((item) => <li key={`${item.case_a}-${item.case_b}`} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm"><span className="font-medium text-slate-800">{item.case_a} · {item.case_b}</span><span className="shrink-0 text-xs text-slate-500">score {item.score.toFixed(3)}</span></li>)}</ul> : <EmptyState title={`No ${title.toLowerCase()} in this split`} message="The held-out data produced no examples for this category." />}</Card>
 }
 

@@ -298,6 +298,17 @@ export async function mockEvaluation(): Promise<Record<string, unknown>> {
         summary_b: 'Students asked the bureau to check the student transcript verification records at this synthetic institution.',
       },
     ],
+    misses: [
+      {
+        case_a: 'RB-2026-00008',
+        case_b: 'PGRC-2026-00008',
+        label: 1,
+        score: 0.649007,
+        kind: 'planted_overlap',
+        summary_a: 'Applicants reported that submitted scholarship documents were not reviewed. Synthetic reference SYN-REF-0008.',
+        summary_b: 'A complaint says scholarship applications remain pending despite document submission. Reference SYN-REF-0008.',
+      },
+    ],
   }
 }
 
